@@ -41,7 +41,7 @@ class CertifyServiceTest {
 
     static final String PREFIXES = """
             PREFIX ex:  <http://example.org/>
-            PREFIX jip: <http://example.org/jip#>
+            PREFIX jip: <https://larsw.github.io/jip#>
             """;
     static final String DATA = """
             PREFIX ex: <http://example.org/>

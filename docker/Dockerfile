@@ -11,6 +11,7 @@ COPY pom.xml ./
 RUN --mount=type=cache,target=/root/.m2 mvn -B -q dependency:go-offline || true
 COPY src ./src
 COPY docker/config.ttl ./docker/config.ttl
+COPY vocab ./vocab
 ARG SKIP_TESTS=false
 RUN --mount=type=cache,target=/root/.m2 mvn -B package -DskipTests=${SKIP_TESTS} 2>&1 \
     | grep -E 'Tests run:|BUILD|ERROR|FAIL' ; test -f target/jena-intrinsic-provenance.jar

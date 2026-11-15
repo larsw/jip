@@ -170,7 +170,7 @@ class FusekiIntegrationTest {
         assertEquals(2, version.get("version").getAsNumber().value().longValue());
         assertEquals(datasetId, version.get("datasetId").getAsString().value());
 
-        HttpResponse<String> fn = query("PREFIX jip: <http://example.org/jip#> SELECT (jip:dataVersion() AS ?v) {}");
+        HttpResponse<String> fn = query("PREFIX jip: <https://larsw.github.io/jip#> SELECT (jip:dataVersion() AS ?v) {}");
         assertTrue(fn.body().contains("\"2\""), fn.body());
         assertEquals(2, versionHeader(fn));
 

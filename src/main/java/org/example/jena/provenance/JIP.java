@@ -6,16 +6,16 @@ import org.apache.jena.rdf.model.ResourceFactory;
 import org.apache.jena.sparql.util.Symbol;
 
 /**
- * Names shared across the module: the placeholder vocabulary namespace, the
+ * Names shared across the module: the vocabulary namespace, the
  * certify SERVICE IRI, assembler terms, context symbols and function IRIs.
  * <p>
- * The namespace is a placeholder ({@code example.org}); change {@link #NS} to rename.
+ * The namespace is defined only in {@link #NS}; change it there to rename.
  */
 public final class JIP {
     private JIP() {}
 
-    /** Placeholder namespace for the custom vocabulary. */
-    public static final String NS = "http://example.org/jip#";
+    /** Namespace for the custom vocabulary. */
+    public static final String NS = "https://larsw.github.io/jip#";
 
     /** The specially named SERVICE that certifies its inner solution sequence. */
     public static final String SERVICE_CERTIFY = "urn:x-provenance:certify";

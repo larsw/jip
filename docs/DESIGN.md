@@ -9,8 +9,8 @@ Proof of concept on **Apache Jena 6.2.0 / Fuseki 6.2.0 (Java 21)** with two goal
    Dataset Canonicalization (RDFC-1.0, <https://github.com/w3c/rdf-canon>).
 
 Every decision below was agreed in a design review before implementation started.
-The custom vocabulary uses the placeholder namespace `jip: <http://example.org/jip#>`,
-which is defined in one constant so it can be renamed.
+The custom vocabulary uses the namespace `jip: <https://larsw.github.io/jip#>`. The
+namespace is set in one constant so it can be renamed, and `vocab/jip.ttl` describes the terms.
 
 ## 1. Background: what TDB2 already has
 

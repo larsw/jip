@@ -40,7 +40,7 @@ public final class Vocab {
 
     public static final Node rdfsLabel = uri(RDFS, "label");
 
-    // jip: certificate vocabulary (placeholder namespace)
+    // jip: certificate vocabulary
     public static final Node ResultCertificate = uri(JIP.NS, "ResultCertificate");
     public static final Node SolutionSequence = uri(JIP.NS, "SolutionSequence");
     public static final Node QueryExecution = uri(JIP.NS, "QueryExecution");

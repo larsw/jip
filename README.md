@@ -62,7 +62,8 @@ The service IRI takes two optional parameters:
 The data version is available in four places:
 
 - `jip:dataVersion()` returns the version of the snapshot the query reads
-  (`PREFIX jip: <http://example.org/jip#>`).
+  (`PREFIX jip: <https://larsw.github.io/jip#>`; the terms are defined in
+  [`vocab/jip.ttl`](vocab/jip.ttl)).
 - `jip:tdbDataVersion()` returns TDB2's own in-memory counter, which restarts at 0.
 - `GET /$/provenance/version/{dataset}` returns both as JSON.
 - Responses that read or wrote a versioned dataset carry the `X-Dataset-Version` and
@@ -75,8 +76,8 @@ separate TDB2 location for the certificates (see [`docker/config.ttl`](docker/co
 
 ```turtle
 [] a fuseki:Server ;
-   ja:context [ ja:cxtName "http://example.org/jip#certificateStore" ; ja:cxtValue "/fuseki/databases/provenance" ] ;
-   ja:context [ ja:cxtName "http://example.org/jip#maxSolutions"    ; ja:cxtValue "10000" ] .
+   ja:context [ ja:cxtName "https://larsw.github.io/jip#certificateStore" ; ja:cxtValue "/fuseki/databases/provenance" ] ;
+   ja:context [ ja:cxtName "https://larsw.github.io/jip#maxSolutions"    ; ja:cxtValue "10000" ] .
 
 :dataset a jip:VersionedDatasetTDB2 ;
     tdb2:location "/fuseki/databases/ds" ;
@@ -114,8 +115,7 @@ To use the module with your own Fuseki 6.2.0, put the jar on the classpath next 
 - The proof is stored as RDF triples, so JSON-LD Verifiable Credential tools may not accept it.
 - A refused certification (no version, too many rows, inside a write transaction) is reported
   as HTTP 500.
-- The `jip:` namespace (`http://example.org/jip#`) and the Maven coordinates
-  `org.example.jena:jena-intrinsic-provenance` are placeholders.
+- The Maven coordinates `org.example.jena:jena-intrinsic-provenance` are placeholders.
 
 ## Layout
 
@@ -130,5 +130,6 @@ src/main/java/org/example/jena/provenance/
   cli/        offline verifier
 docker/       Dockerfile, Fuseki configuration, shiro.ini, entrypoint
 docs/         design notes and the whitepaper
+vocab/        jip.ttl, the jip: vocabulary (RDFS/OWL)
 scripts/      demo and whitepaper build
 ```

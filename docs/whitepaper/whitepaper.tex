@@ -44,6 +44,7 @@
 \hypersetup{
   colorlinks=true, linkcolor=accent, citecolor=accent, urlcolor=accent,
   pdftitle={Intrinsic Provenance for Apache Jena},
+  pdfauthor={Lars Wilhelmsen <lars@sral.org>},
   pdfsubject={A persistent data version for TDB2 and signed certificates for SPARQL results},
   pdfkeywords={Apache Jena, TDB2, Fuseki, SPARQL, provenance, PROV-O, RDFC-1.0, Data Integrity, eddsa-rdfc-2022},
 }
@@ -110,8 +111,8 @@
 % ---------------------------------------------------------------- Title
 \title{\sffamily\bfseries\color{accent}Intrinsic Provenance for Apache Jena\\[0.4em]
   \Large\mdseries\color{black}A Persistent Data Version for TDB2 and\\Signed Certificates for SPARQL Results}
-\author{\normalsize Proof-of-concept report, jena-intrinsic-provenance 0.1.0}
-\date{\normalsize November 2026}
+\author{\large Lars Wilhelmsen\\[0.2em]\normalsize\href{mailto:lars@sral.org}{\texttt{lars@sral.org}}}
+\date{\normalsize Proof-of-concept report, jena-intrinsic-provenance 0.1.0\\[0.2em]November 2026}
 
 \begin{document}
 
@@ -214,8 +215,8 @@ fetch the certificate and verify the rows offline.
 \end{figure}
 
 The module runs on Java 21 and is a single Maven module loaded into the unmodified Fuseki
-server. The vocabulary namespace \code{jip:} (\code{http://example.org/jip\#}) and the Maven
-coordinates are placeholders.
+server. Its vocabulary uses the namespace \code{jip:} (\code{https://larsw.github.io/jip\#}) and is
+defined in \file{vocab/jip.ttl}. The Maven coordinates are placeholders.
 
 \subsection{Conventions}
 
@@ -232,7 +233,7 @@ prefixes used in the examples.
 \toprule
 Prefix & Namespace IRI \\
 \midrule
-\code{jip:} & \code{http://example.org/jip\#} (placeholder for this module's vocabulary) \\
+\code{jip:} & \code{https://larsw.github.io/jip\#} (this module's vocabulary, Appendix~\ref{app:vocab}) \\
 \code{prov:} & \code{http://www.w3.org/ns/prov\#} \\
 \code{sec:} & \code{https://w3id.org/security\#} \\
 \code{dcterms:} & \code{http://purl.org/dc/terms/} \\
@@ -240,6 +241,7 @@ Prefix & Namespace IRI \\
 \code{xsd:} & \code{http://www.w3.org/2001/XMLSchema\#} \\
 \code{tdb2:} & \code{http://jena.apache.org/2016/tdb\#} \\
 \code{ja:} & \code{http://jena.hpl.hp.com/2005/11/Assembler\#} \\
+\code{sd:} & \code{http://www.w3.org/ns/sparql-service-description\#} \\
 \code{ex:} & \code{http://example.org/} \\
 \bottomrule
 \end{tabular}
@@ -774,20 +776,20 @@ verification method is the key in the agent's \code{did:key}.}
 
 \needspace{10\baselineskip}
 \begin{lstlisting}[language=Turtle, caption={A certificate from the demo, with prefixes added and long literals shortened.}, label={lst:certificate}]
-PREFIX c:   <urn:uuid:7d1da795-6efe-4417-bccb-2c639accf590#>
-PREFIX db:  <urn:uuid:93626f08-353a-4036-a6cd-25f090bf3dfa#>
-PREFIX key: <did:key:z6Mkwfium5SWXzotKYkXmjtGctnqSJXNG7UBSidnD4x3D4RR#>
+PREFIX c:   <urn:uuid:727c8399-d13a-4319-a580-1f03c7b4dd36#>
+PREFIX db:  <urn:uuid:64892bdb-9e53-4259-b514-57982c94310d#>
+PREFIX key: <did:key:z6MkjJzLpZ7fcvaTdPSRu3392NCN83rrtcUyuz6M9YLBkH5S#>
 
-<urn:uuid:7d1da795-6efe-4417-bccb-2c639accf590>
+<urn:uuid:727c8399-d13a-4319-a580-1f03c7b4dd36>
     a jip:ResultCertificate, prov:Entity ;
     jip:certifies c:result ;
     sec:proof [
         a sec:DataIntegrityProof ;
         sec:cryptosuite "eddsa-rdfc-2022"^^sec:cryptosuiteString ;
-        sec:verificationMethod key:z6Mkwfium5SWXzotKYkXmjtGctnqSJXNG7UBSidnD4x3D4RR ;
+        sec:verificationMethod key:z6MkjJzLpZ7fcvaTdPSRu3392NCN83rrtcUyuz6M9YLBkH5S ;
         sec:proofPurpose sec:assertionMethod ;
-        dcterms:created "2026-11-15T18:47:44Z"^^xsd:dateTime ;
-        sec:proofValue "z3URvor6YY9K...RRASXZvyX"^^sec:multibase ] .
+        dcterms:created "2026-11-15T20:26:11Z"^^xsd:dateTime ;
+        sec:proofValue "z2jfF3EKBhKx...bcrtHF5R"^^sec:multibase ] .
 
 c:result a jip:SolutionSequence, prov:Entity ;
     prov:wasGeneratedBy c:exec ;
@@ -801,17 +803,17 @@ c:result a jip:SolutionSequence, prov:Entity ;
 
 c:exec a jip:QueryExecution, prov:Activity ;
     prov:used db:v1 ;
-    prov:wasAssociatedWith <did:key:z6Mkwfium5SWXzotKYkXmjtGctnqSJXNG7UBSidnD4x3D4RR> ;
-    prov:startedAtTime "2026-11-15T18:47:44.592035878Z"^^xsd:dateTime ;
-    prov:endedAtTime   "2026-11-15T18:47:44.677306336Z"^^xsd:dateTime ;
+    prov:wasAssociatedWith <did:key:z6MkjJzLpZ7fcvaTdPSRu3392NCN83rrtcUyuz6M9YLBkH5S> ;
+    prov:startedAtTime "2026-11-15T20:26:11.120274728Z"^^xsd:dateTime ;
+    prov:endedAtTime   "2026-11-15T20:26:11.195042121Z"^^xsd:dateTime ;
     jip:servicePattern "SELECT ?name ?email WHERE { ... } ORDER BY ?name" ;
-    jip:queryText "PREFIX jip: <http://example.org/jip#> ..." .
+    jip:queryText "PREFIX jip: <https://larsw.github.io/jip#> ..." .
 
 db:v1 a jip:DatasetState, prov:Entity ;
     jip:dataVersion 1 ;
     prov:specializationOf <https://example.org/datasets/ds> .
 
-<did:key:z6Mkwfium5SWXzotKYkXmjtGctnqSJXNG7UBSidnD4x3D4RR>
+<did:key:z6MkjJzLpZ7fcvaTdPSRu3392NCN83rrtcUyuz6M9YLBkH5S>
     a prov:SoftwareAgent ;
     rdfs:label "jena-intrinsic-provenance 0.1.0-SNAPSHOT on Apache Jena 6.2.0" .
 \end{lstlisting}
@@ -861,13 +863,13 @@ Example~\ref{lst:key} shows.
 \needspace{11\baselineskip}
 \begin{lstlisting}[caption={The public key as returned by \code{GET /\$/provenance/key} (PEM shortened).}, label={lst:key}]
 {
-  "id": "did:key:z6Mkwfium5SWXzotKYkXmjtGctnqSJXNG7UBSidnD4x3D4RR",
-  "verificationMethod": "did:key:z6Mkwf...D4RR#z6Mkwf...D4RR",
+  "id": "did:key:z6MkjJzLpZ7fcvaTdPSRu3392NCN83rrtcUyuz6M9YLBkH5S",
+  "verificationMethod": "did:key:z6MkjJ...kH5S#z6MkjJ...kH5S",
   "type": "Multikey",
-  "publicKeyMultibase": "z6Mkwfium5SWXzotKYkXmjtGctnqSJXNG7UBSidnD4x3D4RR",
+  "publicKeyMultibase": "z6MkjJzLpZ7fcvaTdPSRu3392NCN83rrtcUyuz6M9YLBkH5S",
   "publicKeyJwk": { "kty": "OKP", "crv": "Ed25519",
-                    "x": "_8gGF7hoYHXMEb4B2ChPiaA742Us9SSjICw1loL6WBQ" },
-  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA..."
+                    "x": "SCwIZMYvt0yjp5pEsBQ8uE7B1n1W-DGiP8r2siX_xTk" },
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEASCwIZMYv..."
 }
 \end{lstlisting}
 
@@ -912,16 +914,16 @@ results with one email address changed.
 
 \needspace{15\baselineskip}
 \begin{lstlisting}[basicstyle=\ttfamily\footnotesize, caption={Verifier output for the demo results and for a tampered copy (key IRIs shortened).}, label={lst:verify}]
-$ verify -r results.srj -c certificate.ttl -k did:key:z6Mkwf...D4RR
-Certificate     : urn:uuid:7d1da795-6efe-4417-bccb-2c639accf590
-Signed by       : did:key:z6Mkwf...D4RR#z6Mkwf...D4RR
+$ verify -r results.srj -c certificate.ttl -k did:key:z6MkjJ...kH5S
+Certificate     : urn:uuid:727c8399-d13a-4319-a580-1f03c7b4dd36
+Signed by       : did:key:z6MkjJ...kH5S#z6MkjJ...kH5S
 Signature       : OK
-Dataset state   : urn:uuid:93626f08-353a-4036-a6cd-25f090bf3dfa#v1  (version 1)
+Dataset state   : urn:uuid:64892bdb-9e53-4259-b514-57982c94310d#v1  (version 1)
 Solutions       : 3 certified, 3 row(s) carry this certificate
 Result digest   : OK
 VERIFIED
 
-$ verify -r results-tampered.srj -c certificate.ttl -k did:key:z6Mkwf...D4RR
+$ verify -r results-tampered.srj -c certificate.ttl -k did:key:z6MkjJ...kH5S
 ...
 Result digest   : MISMATCH
 Problem         : Result digest mismatch: certificate feb2d70a...f06efebe, rows b1c94dd9...92ecdc56
@@ -950,9 +952,9 @@ Fuseki configuration.
 \needspace{14\baselineskip}
 \begin{lstlisting}[language=Turtle, caption={Fuseki configuration for the versioned dataset and the certificate store (excerpt of \textit{docker/config.ttl}).}, label={lst:config}]
 [] a fuseki:Server ;
-   ja:context [ ja:cxtName "http://example.org/jip#certificateStore" ;
+   ja:context [ ja:cxtName "https://larsw.github.io/jip#certificateStore" ;
                 ja:cxtValue "/fuseki/databases/provenance" ] ;
-   ja:context [ ja:cxtName "http://example.org/jip#maxSolutions" ;
+   ja:context [ ja:cxtName "https://larsw.github.io/jip#maxSolutions" ;
                 ja:cxtValue "10000" ] .
 
 :dataset a jip:VersionedDatasetTDB2 ;          # instead of tdb2:DatasetTDB2
@@ -1003,7 +1005,7 @@ the same image without installing Java.
 \subsection{Test Suite}
 \label{sec:tests}
 
-The build runs 99 tests, listed in Table~\ref{tab:tests}. They pass on OpenJDK 25 on the
+The build runs 102 tests, listed in Table~\ref{tab:tests}. They pass on OpenJDK 25 on the
 development machine and on Java 21 during the Docker build.
 
 \begin{table}[ht]
@@ -1027,8 +1029,10 @@ both empty-result modes, variable names, the cap, unversioned datasets and \code
 write-transaction refusal, versions after updates, correlated calls. \\
 \code{CanonicalizationCapacityTest} & 1 & Digest time at 10,000 solutions. \\
 \code{FusekiIntegrationTest} & 1 & End to end over HTTP with \file{docker/config.ttl}. \\
+\code{VocabularyTest} & 3 & \file{vocab/jip.ttl} defines every \code{jip:} term the code uses,
+and no others (Appendix~\ref{app:vocab}). \\
 \midrule
-Total & 99 & \\
+Total & 102 & \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1203,14 +1207,23 @@ Maven with Java 21 or later for the local build.
 \begin{lstlisting}[language=bash, caption={Commands to build, test, and run the demo.}, label={lst:reproduce}]
 docker compose up -d --build    # build the module, run the tests on Java 21, start Fuseki
 scripts/demo.sh --reset         # end-to-end demo; --reset deletes the demo volume
-mvn test                        # the 99 tests on the local JDK
+mvn test                        # the 102 tests on the local JDK
 scripts/build-whitepaper.sh     # this report
 \end{lstlisting}
 
 \section{Vocabulary}
 \label{app:vocab}
 
-Table~\ref{tab:vocab} lists the terms of the placeholder \code{jip:} namespace.
+Table~\ref{tab:vocab} lists the terms of the \code{jip:} namespace. The file
+\file{vocab/jip.ttl} in the repository defines them in RDFS and OWL, with labels, comments,
+domains, and ranges, and places the certificate classes under PROV-O:
+\code{jip:QueryExecution} is a subclass of \code{prov:Activity}, and the other three
+certificate classes are subclasses of \code{prov:Entity}. The two functions are typed as
+\code{sd:Function} from SPARQL 1.1 Service Description~\cite{sparqlsd}, and \code{jip:VersionedDatasetTDB2} as a
+subclass of \code{ja:RDFDataset}. The file also describes \code{jip:dataVersionComponent}, a
+context symbol the module uses internally. The test \code{VocabularyTest} fails if the file and
+the code disagree about which terms exist. Publishing the file at
+\mbox{\url{https://larsw.github.io/jip}} would make the namespace IRI dereferenceable.
 
 \begin{table}[ht]
 \centering
