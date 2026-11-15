@@ -1,0 +1,48 @@
+# Fuseki configuration for the jena-intrinsic-provenance PoC.
+#
+#   /ds          versioned TDB2 dataset (query, update, graph store)
+#   /provenance  read-only view of the certificate store
+#   /$/provenance/{certificate/<uuid>, key, version/<dataset>}  (module endpoints)
+
+PREFIX :        <#>
+PREFIX fuseki:  <http://jena.apache.org/fuseki#>
+PREFIX rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX ja:      <http://jena.hpl.hp.com/2005/11/Assembler#>
+PREFIX tdb2:    <http://jena.apache.org/2016/tdb#>
+PREFIX jip:     <http://example.org/jip#>
+
+[] rdf:type fuseki:Server ;
+   # Where certificates are stored (a separate, unversioned TDB2 database).
+   ja:context [ ja:cxtName "http://example.org/jip#certificateStore" ;
+                ja:cxtValue "/fuseki/databases/provenance" ] ;
+   # Largest solution sequence a certify SERVICE call may return.
+   ja:context [ ja:cxtName "http://example.org/jip#maxSolutions" ;
+                ja:cxtValue "10000" ] .
+
+## ---- Versioned data
+
+:service rdf:type fuseki:Service ;
+    fuseki:name "ds" ;
+    fuseki:endpoint [ fuseki:operation fuseki:query ; fuseki:name "sparql" ] ;
+    fuseki:endpoint [ fuseki:operation fuseki:query ] ;
+    fuseki:endpoint [ fuseki:operation fuseki:update ; fuseki:name "update" ] ;
+    fuseki:endpoint [ fuseki:operation fuseki:update ] ;
+    fuseki:endpoint [ fuseki:operation fuseki:gsp-rw ; fuseki:name "data" ] ;
+    fuseki:endpoint [ fuseki:operation fuseki:gsp-rw ] ;
+    fuseki:dataset :dataset .
+
+:dataset rdf:type jip:VersionedDatasetTDB2 ;
+    tdb2:location "/fuseki/databases/ds" ;
+    jip:datasetIRI <https://example.org/datasets/ds> .
+
+## ---- Certificate store (read-only over HTTP; written by the certify SERVICE)
+
+:provService rdf:type fuseki:Service ;
+    fuseki:name "provenance" ;
+    fuseki:endpoint [ fuseki:operation fuseki:query ; fuseki:name "sparql" ] ;
+    fuseki:endpoint [ fuseki:operation fuseki:query ] ;
+    fuseki:endpoint [ fuseki:operation fuseki:gsp-r ; fuseki:name "get" ] ;
+    fuseki:dataset :provDataset .
+
+:provDataset rdf:type tdb2:DatasetTDB2 ;
+    tdb2:location "/fuseki/databases/provenance" .

@@ -1,0 +1,17 @@
+services:
+  fuseki:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: jena-intrinsic-provenance:0.1.0
+    ports:
+      - "3030:3030"
+    volumes:
+      # Databases (ds, provenance), the signing key and Fuseki's run area.
+      - fuseki-data:/fuseki
+    # To use your own key: mount it and point PROVENANCE_SIGNING_KEY at it.
+    # environment:
+    #   PROVENANCE_SIGNING_KEY: /run/secrets/provenance-key.pem
+
+volumes:
+  fuseki-data:
