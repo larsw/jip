@@ -51,7 +51,7 @@ certificate() {
 }
 
 PREFIXES='PREFIX ex: <http://example.org/>
-PREFIX jip: <https://larsw.github.io/jip#>'
+PREFIX jip: <https://larsw.xyz/jip/>'
 CERTIFIED_QUERY="$PREFIXES
 SELECT ?name ?email ?cert WHERE {
   SERVICE <urn:x-provenance:certify> {
@@ -139,7 +139,7 @@ curl -fsS "$BASE/\$/provenance/version/ds" | jq -c '{version, tdbInternal}' | se
 bold "10. Certificates are queryable (PROV-O) at /provenance"
 curl -fsS -H 'Accept: application/sparql-results+json' --data-urlencode query@- "$BASE/provenance/sparql" <<'EOF' |
 PREFIX prov: <http://www.w3.org/ns/prov#>
-PREFIX jip:  <https://larsw.github.io/jip#>
+PREFIX jip:  <https://larsw.xyz/jip/>
 SELECT ?cert ?version ?solutions ?ended WHERE {
   GRAPH ?cert {
     ?cert jip:certifies ?r .

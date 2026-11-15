@@ -27,7 +27,8 @@ import org.junit.jupiter.api.Test;
 public class VocabularyTest {
 
     static final Path FILE = Path.of("vocab", "jip.ttl");
-    static final String ONTOLOGY = JIP.NS.substring(0, JIP.NS.length() - 1);
+    /** Slash namespace: the ontology IRI is the namespace IRI. */
+    static final String ONTOLOGY = JIP.NS;
     static Model vocab;
 
     @BeforeAll
@@ -61,7 +62,7 @@ public class VocabularyTest {
     static Set<String> termsInFile() {
         Set<String> terms = new TreeSet<>();
         vocab.listSubjects().forEachRemaining(s -> {
-            if ( s.isURIResource() && s.getURI().startsWith(JIP.NS) )
+            if ( s.isURIResource() && s.getURI().startsWith(JIP.NS) && !s.getURI().equals(ONTOLOGY) )
                 terms.add(s.getURI());
         });
         return terms;

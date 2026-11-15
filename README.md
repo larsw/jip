@@ -62,8 +62,8 @@ The service IRI takes two optional parameters:
 The data version is available in four places:
 
 - `jip:dataVersion()` returns the version of the snapshot the query reads
-  (`PREFIX jip: <https://larsw.github.io/jip#>`; the terms are defined in
-  [`vocab/jip.ttl`](vocab/jip.ttl) and published at <https://larsw.github.io/jip>).
+  (`PREFIX jip: <https://larsw.xyz/jip/>`; the terms are defined in
+  [`vocab/jip.ttl`](vocab/jip.ttl) and published at <https://larsw.xyz/jip/>).
 - `jip:tdbDataVersion()` returns TDB2's own in-memory counter, which restarts at 0.
 - `GET /$/provenance/version/{dataset}` returns both as JSON.
 - Responses that read or wrote a versioned dataset carry the `X-Dataset-Version` and
@@ -76,8 +76,8 @@ separate TDB2 location for the certificates (see [`docker/config.ttl`](docker/co
 
 ```turtle
 [] a fuseki:Server ;
-   ja:context [ ja:cxtName "https://larsw.github.io/jip#certificateStore" ; ja:cxtValue "/fuseki/databases/provenance" ] ;
-   ja:context [ ja:cxtName "https://larsw.github.io/jip#maxSolutions"    ; ja:cxtValue "10000" ] .
+   ja:context [ ja:cxtName "https://larsw.xyz/jip/certificateStore" ; ja:cxtValue "/fuseki/databases/provenance" ] ;
+   ja:context [ ja:cxtName "https://larsw.xyz/jip/maxSolutions"    ; ja:cxtValue "10000" ] .
 
 :dataset a jip:VersionedDatasetTDB2 ;
     tdb2:location "/fuseki/databases/ds" ;

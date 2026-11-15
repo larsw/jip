@@ -9,14 +9,14 @@ PREFIX fuseki:  <http://jena.apache.org/fuseki#>
 PREFIX rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX ja:      <http://jena.hpl.hp.com/2005/11/Assembler#>
 PREFIX tdb2:    <http://jena.apache.org/2016/tdb#>
-PREFIX jip:     <https://larsw.github.io/jip#>
+PREFIX jip:     <https://larsw.xyz/jip/>
 
 [] rdf:type fuseki:Server ;
    # Where certificates are stored (a separate, unversioned TDB2 database).
-   ja:context [ ja:cxtName "https://larsw.github.io/jip#certificateStore" ;
+   ja:context [ ja:cxtName "https://larsw.xyz/jip/certificateStore" ;
                 ja:cxtValue "/fuseki/databases/provenance" ] ;
    # Largest solution sequence a certify SERVICE call may return.
-   ja:context [ ja:cxtName "https://larsw.github.io/jip#maxSolutions" ;
+   ja:context [ ja:cxtName "https://larsw.xyz/jip/maxSolutions" ;
                 ja:cxtValue "10000" ] .
 
 ## ---- Versioned data

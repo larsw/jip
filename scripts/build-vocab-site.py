@@ -8,6 +8,8 @@ Writes:
     jip.ttl      the vocabulary as Turtle (copied unchanged)
     jip.jsonld   the vocabulary as JSON-LD
     jip.nt       the vocabulary as N-Triples
+    <Term>.html  one page per term; GitHub Pages serves it at the term's IRI,
+                 https://larsw.xyz/jip/<Term>, so every term IRI resolves
 
 Needs rdflib (pip install rdflib==7.6.0). The GitHub Actions workflow
 .github/workflows/pages.yml runs this script and publishes the result.
@@ -27,8 +29,8 @@ ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "vocab" / "jip.ttl"
 REPO_URL = os.environ.get("JIP_REPO_URL", "https://github.com/larsw/jip")
 
-JIP = "https://larsw.github.io/jip#"
-ONTOLOGY = URIRef(JIP[:-1])
+JIP = "https://larsw.xyz/jip/"
+ONTOLOGY = URIRef(JIP)        # slash namespace: the ontology IRI is the namespace IRI
 VANN = "http://purl.org/vocab/vann/"
 SD = "http://www.w3.org/ns/sparql-service-description#"
 SD_FUNCTION = URIRef(SD + "Function")
@@ -84,12 +86,16 @@ def curie(g, term):
         return f"<{term}>"
 
 
-def link(g, term):
-    """A link to a term: in-page anchor for jip: terms, the IRI itself otherwise."""
+def link(g, term, in_index):
+    """A link to a term. jip: terms link to their section on the index page, or to their own
+    page (a relative IRI) from a term page; other terms link to their IRI."""
     if isinstance(term, Literal):
         return esc(term)
     s = str(term)
-    href = "#" + local(term) if s.startswith(JIP) else s
+    if s.startswith(JIP):
+        href = ("#" + local(term)) if in_index else (local(term) or "./")
+    else:
+        href = s
     return f'<a href="{esc(href)}"><code>{esc(curie(g, term))}</code></a>'
 
 
@@ -111,18 +117,18 @@ def objects(g, s, p):
     return sorted(g.objects(s, p), key=str)
 
 
-def term_html(g, term):
+def term_html(g, term, in_index=True):
     label = g.value(term, RDFS.label)
     types = objects(g, term, RDF.type)
-    rows = [("Type", ", ".join(link(g, t) for t in types))]
+    rows = [("Type", ", ".join(link(g, t, in_index) for t in types))]
     for name, pred in (("Subclass of", RDFS.subClassOf), ("Domain", RDFS.domain),
                        ("Range", RDFS.range), ("See also", RDFS.seeAlso)):
         vals = objects(g, term, pred)
         if vals:
-            rows.append((name, ", ".join(link(g, v) for v in vals)))
+            rows.append((name, ", ".join(link(g, v, in_index) for v in vals)))
     dl = "".join(f"<dt>{esc(k)}</dt><dd>{v}</dd>" for k, v in rows)
     return (f'<section class="term" id="{esc(local(term))}">'
-            f'<h3><code>jip:{esc(local(term))}</code>'
+            f'<h3><a href="{esc(local(term))}"><code>jip:{esc(local(term))}</code></a>'
             + (f" &middot; {esc(label)}" if label else "") + "</h3>"
             f'<div class="iri">{esc(term)}</div>'
             f"{paragraphs(g.value(term, RDFS.comment) or '')}"
@@ -130,7 +136,8 @@ def term_html(g, term):
 
 
 def groups(g):
-    terms = sorted({s for s in g.subjects() if isinstance(s, URIRef) and str(s).startswith(JIP)},
+    terms = sorted({s for s in g.subjects()
+                    if isinstance(s, URIRef) and str(s).startswith(JIP) and s != ONTOLOGY},
                    key=lambda t: local(t).lower())
     classes, properties, functions, other = [], [], [], []
     for t in terms:
@@ -206,6 +213,40 @@ def page(g, embedded):
 """
 
 
+def term_page(g, term):
+    """A page for one term, served at the term's IRI, with the term's triples as JSON-LD."""
+    sub = Graph()
+    for p, ns in g.namespaces():
+        sub.bind(p, ns)
+    for t in g.triples((term, None, None)):
+        sub.add(t)
+    data = json.dumps(json_ld(sub), indent=2, ensure_ascii=False).replace("</", "<\\/")
+    name = "jip:" + local(term)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{esc(name)}</title>
+<link rel="alternate" type="text/turtle" href="jip.ttl">
+<link rel="alternate" type="application/ld+json" href="jip.jsonld">
+<style>{CSS}</style>
+<script type="application/ld+json">
+{data}
+</script>
+</head>
+<body>
+<main>
+<p class="lead">Term of the <a href="./">jip vocabulary</a></p>
+{term_html(g, term, in_index=False)}
+<footer>The whole vocabulary: <a href="./">overview</a> &middot; <a href="jip.ttl">Turtle</a>
+&middot; <a href="jip.jsonld">JSON-LD</a> &middot; <a href="jip.nt">N-Triples</a></footer>
+</main>
+</body>
+</html>
+"""
+
+
 def main():
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "build" / "vocab-site"
     g = Graph()
@@ -218,7 +259,10 @@ def main():
     (out / "jip.jsonld").write_text(json.dumps(embedded, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     (out / "jip.nt").write_text(g.serialize(format="nt"), encoding="utf-8")
     (out / "index.html").write_text(page(g, embedded), encoding="utf-8")
-    print(f"{len(g)} triples -> {out}")
+    terms = [t for _, _, ts in groups(g) for t in ts]
+    for t in terms:
+        (out / f"{local(t)}.html").write_text(term_page(g, t), encoding="utf-8")
+    print(f"{len(g)} triples, {len(terms)} term pages -> {out}")
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ public final class TestLib {
     /** Build a dataset through the jip:VersionedDatasetTDB2 assembler. */
     public static DatasetGraph assembleVersioned(String location) {
         String ttl = """
-                PREFIX jip:  <https://larsw.github.io/jip#>
+                PREFIX jip:  <https://larsw.xyz/jip/>
                 PREFIX tdb2: <http://jena.apache.org/2016/tdb#>
                 <urn:ex:ds> a jip:VersionedDatasetTDB2 ;
                     tdb2:location "%s" ;

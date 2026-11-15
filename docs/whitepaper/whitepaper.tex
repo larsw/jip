@@ -215,7 +215,7 @@ fetch the certificate and verify the rows offline.
 \end{figure}
 
 The module runs on Java 21 and is a single Maven module loaded into the unmodified Fuseki
-server. Its vocabulary uses the namespace \code{jip:} (\code{https://larsw.github.io/jip\#}) and is
+server. Its vocabulary uses the namespace \code{jip:} (\code{https://larsw.xyz/jip/}) and is
 defined in \file{vocab/jip.ttl}. The Maven coordinates are placeholders.
 
 \subsection{Conventions}
@@ -233,7 +233,7 @@ prefixes used in the examples.
 \toprule
 Prefix & Namespace IRI \\
 \midrule
-\code{jip:} & \code{https://larsw.github.io/jip\#} (this module's vocabulary, Appendix~\ref{app:vocab}) \\
+\code{jip:} & \code{https://larsw.xyz/jip/} (this module's vocabulary, Appendix~\ref{app:vocab}) \\
 \code{prov:} & \code{http://www.w3.org/ns/prov\#} \\
 \code{sec:} & \code{https://w3id.org/security\#} \\
 \code{dcterms:} & \code{http://purl.org/dc/terms/} \\
@@ -776,20 +776,20 @@ verification method is the key in the agent's \code{did:key}.}
 
 \needspace{10\baselineskip}
 \begin{lstlisting}[language=Turtle, caption={A certificate from the demo, with prefixes added and long literals shortened.}, label={lst:certificate}]
-PREFIX c:   <urn:uuid:727c8399-d13a-4319-a580-1f03c7b4dd36#>
-PREFIX db:  <urn:uuid:64892bdb-9e53-4259-b514-57982c94310d#>
-PREFIX key: <did:key:z6MkjJzLpZ7fcvaTdPSRu3392NCN83rrtcUyuz6M9YLBkH5S#>
+PREFIX c:   <urn:uuid:7f8e40d8-ee4a-40cd-8305-93f8c12750c2#>
+PREFIX db:  <urn:uuid:477ecd53-b6e7-483b-a677-43635e29cb88#>
+PREFIX key: <did:key:z6MkfPSmbbKCU4mQDg6J5tsZPKbrpekDbYW8TzgYRJZkF9JC#>
 
-<urn:uuid:727c8399-d13a-4319-a580-1f03c7b4dd36>
+<urn:uuid:7f8e40d8-ee4a-40cd-8305-93f8c12750c2>
     a jip:ResultCertificate, prov:Entity ;
     jip:certifies c:result ;
     sec:proof [
         a sec:DataIntegrityProof ;
         sec:cryptosuite "eddsa-rdfc-2022"^^sec:cryptosuiteString ;
-        sec:verificationMethod key:z6MkjJzLpZ7fcvaTdPSRu3392NCN83rrtcUyuz6M9YLBkH5S ;
+        sec:verificationMethod key:z6MkfPSmbbKCU4mQDg6J5tsZPKbrpekDbYW8TzgYRJZkF9JC ;
         sec:proofPurpose sec:assertionMethod ;
-        dcterms:created "2026-11-15T20:26:11Z"^^xsd:dateTime ;
-        sec:proofValue "z2jfF3EKBhKx...bcrtHF5R"^^sec:multibase ] .
+        dcterms:created "2026-11-15T20:44:38Z"^^xsd:dateTime ;
+        sec:proofValue "z4ponFRVw4vW...mGMeYn2Q"^^sec:multibase ] .
 
 c:result a jip:SolutionSequence, prov:Entity ;
     prov:wasGeneratedBy c:exec ;
@@ -803,17 +803,17 @@ c:result a jip:SolutionSequence, prov:Entity ;
 
 c:exec a jip:QueryExecution, prov:Activity ;
     prov:used db:v1 ;
-    prov:wasAssociatedWith <did:key:z6MkjJzLpZ7fcvaTdPSRu3392NCN83rrtcUyuz6M9YLBkH5S> ;
-    prov:startedAtTime "2026-11-15T20:26:11.120274728Z"^^xsd:dateTime ;
-    prov:endedAtTime   "2026-11-15T20:26:11.195042121Z"^^xsd:dateTime ;
+    prov:wasAssociatedWith <did:key:z6MkfPSmbbKCU4mQDg6J5tsZPKbrpekDbYW8TzgYRJZkF9JC> ;
+    prov:startedAtTime "2026-11-15T20:44:38.515860037Z"^^xsd:dateTime ;
+    prov:endedAtTime   "2026-11-15T20:44:38.586955493Z"^^xsd:dateTime ;
     jip:servicePattern "SELECT ?name ?email WHERE { ... } ORDER BY ?name" ;
-    jip:queryText "PREFIX jip: <https://larsw.github.io/jip#> ..." .
+    jip:queryText "PREFIX jip: <https://larsw.xyz/jip/> ..." .
 
 db:v1 a jip:DatasetState, prov:Entity ;
     jip:dataVersion 1 ;
     prov:specializationOf <https://example.org/datasets/ds> .
 
-<did:key:z6MkjJzLpZ7fcvaTdPSRu3392NCN83rrtcUyuz6M9YLBkH5S>
+<did:key:z6MkfPSmbbKCU4mQDg6J5tsZPKbrpekDbYW8TzgYRJZkF9JC>
     a prov:SoftwareAgent ;
     rdfs:label "jena-intrinsic-provenance 0.1.0-SNAPSHOT on Apache Jena 6.2.0" .
 \end{lstlisting}
@@ -863,13 +863,13 @@ Example~\ref{lst:key} shows.
 \needspace{11\baselineskip}
 \begin{lstlisting}[caption={The public key as returned by \code{GET /\$/provenance/key} (PEM shortened).}, label={lst:key}]
 {
-  "id": "did:key:z6MkjJzLpZ7fcvaTdPSRu3392NCN83rrtcUyuz6M9YLBkH5S",
-  "verificationMethod": "did:key:z6MkjJ...kH5S#z6MkjJ...kH5S",
+  "id": "did:key:z6MkfPSmbbKCU4mQDg6J5tsZPKbrpekDbYW8TzgYRJZkF9JC",
+  "verificationMethod": "did:key:z6MkfP...F9JC#z6MkfP...F9JC",
   "type": "Multikey",
-  "publicKeyMultibase": "z6MkjJzLpZ7fcvaTdPSRu3392NCN83rrtcUyuz6M9YLBkH5S",
+  "publicKeyMultibase": "z6MkfPSmbbKCU4mQDg6J5tsZPKbrpekDbYW8TzgYRJZkF9JC",
   "publicKeyJwk": { "kty": "OKP", "crv": "Ed25519",
-                    "x": "SCwIZMYvt0yjp5pEsBQ8uE7B1n1W-DGiP8r2siX_xTk" },
-  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEASCwIZMYv..."
+                    "x": "DeF9WD56PJhM4OjeOrEWBELIFg5y0BGeaIcfvAj1YCU" },
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEADeF9WD56..."
 }
 \end{lstlisting}
 
@@ -914,16 +914,16 @@ results with one email address changed.
 
 \needspace{15\baselineskip}
 \begin{lstlisting}[basicstyle=\ttfamily\footnotesize, caption={Verifier output for the demo results and for a tampered copy (key IRIs shortened).}, label={lst:verify}]
-$ verify -r results.srj -c certificate.ttl -k did:key:z6MkjJ...kH5S
-Certificate     : urn:uuid:727c8399-d13a-4319-a580-1f03c7b4dd36
-Signed by       : did:key:z6MkjJ...kH5S#z6MkjJ...kH5S
+$ verify -r results.srj -c certificate.ttl -k did:key:z6MkfP...F9JC
+Certificate     : urn:uuid:7f8e40d8-ee4a-40cd-8305-93f8c12750c2
+Signed by       : did:key:z6MkfP...F9JC#z6MkfP...F9JC
 Signature       : OK
-Dataset state   : urn:uuid:64892bdb-9e53-4259-b514-57982c94310d#v1  (version 1)
+Dataset state   : urn:uuid:477ecd53-b6e7-483b-a677-43635e29cb88#v1  (version 1)
 Solutions       : 3 certified, 3 row(s) carry this certificate
 Result digest   : OK
 VERIFIED
 
-$ verify -r results-tampered.srj -c certificate.ttl -k did:key:z6MkjJ...kH5S
+$ verify -r results-tampered.srj -c certificate.ttl -k did:key:z6MkfP...F9JC
 ...
 Result digest   : MISMATCH
 Problem         : Result digest mismatch: certificate feb2d70a...f06efebe, rows b1c94dd9...92ecdc56
@@ -952,9 +952,9 @@ Fuseki configuration.
 \needspace{14\baselineskip}
 \begin{lstlisting}[language=Turtle, caption={Fuseki configuration for the versioned dataset and the certificate store (excerpt of \textit{docker/config.ttl}).}, label={lst:config}]
 [] a fuseki:Server ;
-   ja:context [ ja:cxtName "https://larsw.github.io/jip#certificateStore" ;
+   ja:context [ ja:cxtName "https://larsw.xyz/jip/certificateStore" ;
                 ja:cxtValue "/fuseki/databases/provenance" ] ;
-   ja:context [ ja:cxtName "https://larsw.github.io/jip#maxSolutions" ;
+   ja:context [ ja:cxtName "https://larsw.xyz/jip/maxSolutions" ;
                 ja:cxtValue "10000" ] .
 
 :dataset a jip:VersionedDatasetTDB2 ;          # instead of tdb2:DatasetTDB2
@@ -1225,10 +1225,12 @@ subclass of \code{ja:RDFDataset}. The file also describes \code{jip:dataVersionC
 context symbol the module uses internally. The test \code{VocabularyTest} fails if the file and
 the code disagree about which terms exist.
 
-A GitHub Actions workflow publishes the file with GitHub Pages, so the namespace IRI
-\mbox{\url{https://larsw.github.io/jip}} resolves to a page that describes each term. GitHub
-Pages can't negotiate content types, so the page is HTML. It embeds the vocabulary as JSON-LD
-and links to Turtle, JSON-LD, and N-Triples versions with \code{<link rel="alternate">}
+The namespace is a slash namespace, so every term has an IRI of its own. A GitHub Actions
+workflow publishes the file with GitHub Pages: the namespace IRI \mbox{\url{https://larsw.xyz/jip/}}
+serves a page that describes all terms, and each term IRI, such as
+\mbox{\url{https://larsw.xyz/jip/ResultCertificate}}, serves a page for that term. GitHub Pages
+can't negotiate content types, so these pages are HTML. Each embeds its RDF as JSON-LD and links
+to Turtle, JSON-LD, and N-Triples versions of the vocabulary with \code{<link rel="alternate">}
 elements.
 
 \begin{table}[ht]

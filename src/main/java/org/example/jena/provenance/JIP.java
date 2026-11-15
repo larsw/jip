@@ -15,7 +15,7 @@ public final class JIP {
     private JIP() {}
 
     /** Namespace for the custom vocabulary. */
-    public static final String NS = "https://larsw.github.io/jip#";
+    public static final String NS = "https://larsw.xyz/jip/";
 
     /** The specially named SERVICE that certifies its inner solution sequence. */
     public static final String SERVICE_CERTIFY = "urn:x-provenance:certify";

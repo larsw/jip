@@ -4,7 +4,7 @@
 # results. VocabularyTest checks that this file defines every jip: term the code uses,
 # and no others.
 
-PREFIX jip:     <https://larsw.github.io/jip#>
+PREFIX jip:     <https://larsw.xyz/jip/>
 PREFIX owl:     <http://www.w3.org/2002/07/owl#>
 PREFIX rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs:    <http://www.w3.org/2000/01/rdf-schema#>
@@ -16,7 +16,7 @@ PREFIX sd:      <http://www.w3.org/ns/sparql-service-description#>
 PREFIX ja:      <http://jena.hpl.hp.com/2005/11/Assembler#>
 PREFIX tdb2:    <http://jena.apache.org/2016/tdb#>
 
-<https://larsw.github.io/jip>
+<https://larsw.xyz/jip/>
     a owl:Ontology ;
     dcterms:title "Jena intrinsic provenance (jip) vocabulary"@en ;
     dcterms:description """Terms used by jena-intrinsic-provenance, a module for Apache Jena
@@ -29,7 +29,7 @@ from the https://w3id.org/security# vocabulary."""@en ;
     dcterms:created "2026-11-15"^^xsd:date ;
     owl:versionInfo "0.1.0" ;
     vann:preferredNamespacePrefix "jip" ;
-    vann:preferredNamespaceUri "https://larsw.github.io/jip#" ;
+    vann:preferredNamespaceUri "https://larsw.xyz/jip/" ;
     rdfs:seeAlso <https://www.w3.org/TR/prov-o/> ,
                  <https://www.w3.org/TR/rdf-canon/> ,
                  <https://www.w3.org/TR/vc-di-eddsa/> .
@@ -43,7 +43,7 @@ jip:ResultCertificate
     rdfs:comment """A signed statement that a solution sequence was obtained from a given
 dataset state. Its IRI is urn:uuid:<uuid>, it is stored as a named graph of the same name,
 and it carries one sec:proof with the eddsa-rdfc-2022 cryptosuite."""@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:SolutionSequence
     a owl:Class ;
@@ -51,7 +51,7 @@ jip:SolutionSequence
     rdfs:label "solution sequence"@en ;
     rdfs:comment """The solutions of the pattern inside one call of the certify SERVICE. Only
 the digest of the solutions is recorded, never the solutions themselves."""@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:QueryExecution
     a owl:Class ;
@@ -59,7 +59,7 @@ jip:QueryExecution
     rdfs:label "query execution"@en ;
     rdfs:comment """The evaluation of a certified pattern. Its prov:startedAtTime and
 prov:endedAtTime come from the server clock."""@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:DatasetState
     a owl:Class ;
@@ -68,7 +68,7 @@ jip:DatasetState
     rdfs:comment """One committed state of a versioned TDB2 database, named
 urn:uuid:<database id>#v<version>. It is a prov:specializationOf the logical dataset
 (jip:datasetIRI), or of urn:uuid:<database id> if none is configured."""@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:certifies
     a owl:ObjectProperty , owl:FunctionalProperty ;
@@ -76,7 +76,7 @@ jip:certifies
     rdfs:range jip:SolutionSequence ;
     rdfs:label "certifies"@en ;
     rdfs:comment "Links a certificate to the solution sequence it certifies."@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:variable
     a owl:DatatypeProperty ;
@@ -85,7 +85,7 @@ jip:variable
     rdfs:label "variable"@en ;
     rdfs:comment """The name, without '?', of a certified variable. A solution sequence has one
 value per variable visible in the certified pattern, excluding the certificate variable."""@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:ordered
     a owl:DatatypeProperty , owl:FunctionalProperty ;
@@ -94,7 +94,7 @@ jip:ordered
     rdfs:label "ordered"@en ;
     rdfs:comment """True if the certified pattern has ORDER BY (or a top-N operation) at the top.
 Row order is then part of the digest; otherwise the digest doesn't depend on row order."""@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:solutionCount
     a owl:DatatypeProperty , owl:FunctionalProperty ;
@@ -102,7 +102,7 @@ jip:solutionCount
     rdfs:range xsd:integer ;
     rdfs:label "solution count"@en ;
     rdfs:comment "The number of certified solutions, duplicates included. 0 for an empty result."@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:canonicalization
     a owl:ObjectProperty , owl:FunctionalProperty ;
@@ -111,7 +111,7 @@ jip:canonicalization
     rdfs:comment """The canonicalization algorithm applied to the result-set encoding of the
 solutions before hashing, identified by its specification: <https://www.w3.org/TR/rdf-canon/>
 for RDFC-1.0."""@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:digestAlgorithm
     a owl:DatatypeProperty , owl:FunctionalProperty ;
@@ -119,7 +119,7 @@ jip:digestAlgorithm
     rdfs:range xsd:string ;
     rdfs:label "digest algorithm"@en ;
     rdfs:comment "The hash function used for jip:digest, for example \"SHA-256\"."@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:digest
     a owl:DatatypeProperty , owl:FunctionalProperty ;
@@ -128,7 +128,7 @@ jip:digest
     rdfs:label "digest"@en ;
     rdfs:comment """Lowercase hexadecimal hash of the canonical N-Quads of the solutions, encoded
 with the result-set vocabulary <http://www.w3.org/2001/sw/DataAccess/tests/result-set#>."""@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:servicePattern
     a owl:DatatypeProperty , owl:FunctionalProperty ;
@@ -136,7 +136,7 @@ jip:servicePattern
     rdfs:range xsd:string ;
     rdfs:label "service pattern"@en ;
     rdfs:comment "The certified pattern, the body of the certify SERVICE, as SPARQL text."@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:queryText
     a owl:DatatypeProperty , owl:FunctionalProperty ;
@@ -144,7 +144,7 @@ jip:queryText
     rdfs:range xsd:string ;
     rdfs:label "query text"@en ;
     rdfs:comment "The whole query that contained the certify SERVICE, as SPARQL text, when available."@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:dataVersion
     a owl:DatatypeProperty , owl:FunctionalProperty , sd:Function ;
@@ -157,7 +157,7 @@ and goes up by one on every committed write transaction.
 As a SPARQL function, jip:dataVersion(): the persistent data version of the snapshot the query
 reads, or the last committed version outside a transaction. It is an error on a dataset that is
 not a jip:VersionedDatasetTDB2."""@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 ## ---- SPARQL functions
 
@@ -167,7 +167,7 @@ jip:tdbDataVersion
     rdfs:comment """SPARQL function jip:tdbDataVersion(): TDB2's own data version counter. It is
 held in memory only and starts again at 0 when the database is opened, so it is not unique
 over time. Provided for comparison with jip:dataVersion()."""@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 ## ---- Configuration (assembler)
 
@@ -180,7 +180,7 @@ place of tdb2:DatasetTDB2; it takes tdb2:location (required), tdb2:unionDefaultG
 jip:datasetIRI (optional). Before the database is opened, the assembler replays committed data
 version records from the TDB2 journal."""@en ;
     rdfs:seeAlso tdb2:DatasetTDB2 ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:datasetIRI
     a rdf:Property ;
@@ -189,7 +189,7 @@ jip:datasetIRI
     rdfs:comment """The IRI of the logical dataset. Every jip:DatasetState of the database is a
 prov:specializationOf this IRI. Given as an IRI; a string literal holding the IRI is also
 accepted."""@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 ## ---- Configuration (context symbols, used as ja:cxtName in a ja:context)
 
@@ -199,7 +199,7 @@ jip:certificateStore
     rdfs:comment """Context symbol, normally set in the Fuseki server's ja:context: the TDB2
 location where certificates are stored, one named graph per certificate. It must be a
 database other than the versioned dataset."""@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:maxSolutions
     a rdfs:Resource ;
@@ -207,11 +207,11 @@ jip:maxSolutions
     rdfs:comment """Context symbol, set in the Fuseki server's ja:context: the largest number of
 solutions one call of the certify SERVICE accepts (default 10000). A larger result fails the
 query; it is never truncated."""@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:dataVersionComponent
     a rdfs:Resource ;
     rdfs:label "data version component"@en ;
     rdfs:comment """Internal context symbol under which the module records the data version
 component attached to a dataset. Not meant to be configured."""@en ;
-    rdfs:isDefinedBy <https://larsw.github.io/jip> .
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .

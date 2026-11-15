@@ -1,5 +1,5 @@
 # Publishes the jip: vocabulary (vocab/jip.ttl) with GitHub Pages, so that the namespace
-# https://larsw.github.io/jip# resolves to a page describing its terms.
+# https://larsw.xyz/jip/ resolves to a page describing its terms.
 name: Vocabulary site
 
 on:

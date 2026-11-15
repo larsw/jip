@@ -207,7 +207,7 @@ class DataVersionTest {
     /** [jip:dataVersion(), jip:tdbDataVersion()] via SPARQL. */
     static long[] queryVersions(DatasetGraph dsg) {
         String q = """
-                PREFIX jip: <https://larsw.github.io/jip#>
+                PREFIX jip: <https://larsw.xyz/jip/>
                 SELECT (jip:dataVersion() AS ?v) (jip:tdbDataVersion() AS ?t) {}
                 """;
         try ( QueryExec qExec = QueryExec.dataset(dsg).query(q).build() ) {
