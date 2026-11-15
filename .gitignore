@@ -6,3 +6,4 @@ target/
 .DS_Store
 /run/
 /demo-out/
+/docs/whitepaper/build/
