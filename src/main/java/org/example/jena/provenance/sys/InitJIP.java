@@ -2,10 +2,12 @@ package org.example.jena.provenance.sys;
 
 import org.apache.jena.sparql.core.assembler.AssemblerUtils;
 import org.apache.jena.sparql.function.FunctionRegistry;
+import org.apache.jena.sparql.service.ServiceExecutorRegistry;
 import org.apache.jena.sys.JenaSubsystemLifecycle;
 import org.example.jena.provenance.JIP;
 import org.example.jena.provenance.function.DataVersionFunction;
 import org.example.jena.provenance.function.TdbDataVersionFunction;
+import org.example.jena.provenance.service.CertifyServiceExecutor;
 import org.example.jena.provenance.version.VersionedDatasetAssembler;
 
 /**
@@ -28,6 +30,8 @@ public class InitJIP implements JenaSubsystemLifecycle {
         AssemblerUtils.registerDataset(JIP.VersionedDatasetTDB2, new VersionedDatasetAssembler());
         FunctionRegistry.get().put(JIP.FN_DATA_VERSION, DataVersionFunction.class);
         FunctionRegistry.get().put(JIP.FN_TDB_DATA_VERSION, TdbDataVersionFunction.class);
+        // Prepended to the chain: runs before the HTTP executor and its httpServiceAllowed check.
+        ServiceExecutorRegistry.get().addSingleLink(new CertifyServiceExecutor());
     }
 
     @Override

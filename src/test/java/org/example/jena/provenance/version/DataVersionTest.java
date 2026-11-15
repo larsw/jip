@@ -12,13 +12,8 @@ import org.apache.jena.dboe.base.file.Location;
 import org.apache.jena.dboe.transaction.txn.journal.Journal;
 import org.apache.jena.dboe.transaction.txn.journal.JournalEntry;
 import org.apache.jena.dboe.transaction.txn.journal.JournalEntryType;
-import org.apache.jena.query.DatasetFactory;
 import org.apache.jena.query.QueryExecException;
 import org.apache.jena.query.TxnType;
-import org.apache.jena.rdf.model.Model;
-import org.apache.jena.rdf.model.ModelFactory;
-import org.apache.jena.riot.Lang;
-import org.apache.jena.riot.RDFParser;
 import org.apache.jena.sparql.core.DatasetGraph;
 import org.apache.jena.sparql.core.DatasetGraphFactory;
 import org.apache.jena.sparql.engine.binding.Binding;
@@ -28,6 +23,7 @@ import org.apache.jena.system.Txn;
 import org.apache.jena.tdb2.DatabaseMgr;
 import org.apache.jena.tdb2.sys.DatabaseOps;
 import org.apache.jena.tdb2.sys.TDBInternal;
+import org.example.jena.provenance.TestLib;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -43,18 +39,8 @@ class DataVersionTest {
         DataVersion.resetForTesting();
     }
 
-    /** Build a dataset through the jip:VersionedDatasetTDB2 assembler. */
     static DatasetGraph assemble(String location) {
-        String ttl = """
-                PREFIX jip:  <http://example.org/jip#>
-                PREFIX tdb2: <http://jena.apache.org/2016/tdb#>
-                <urn:ex:ds> a jip:VersionedDatasetTDB2 ;
-                    tdb2:location "%s" ;
-                    jip:datasetIRI <https://example.org/ds> .
-                """.formatted(location);
-        Model m = ModelFactory.createDefaultModel();
-        RDFParser.fromString(ttl, Lang.TTL).parse(m);
-        return DatasetFactory.assemble(m.getResource("urn:ex:ds")).asDatasetGraph();
+        return TestLib.assembleVersioned(location);
     }
 
     static void write(DatasetGraph dsg, String quad) {
