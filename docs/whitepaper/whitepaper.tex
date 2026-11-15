@@ -1199,7 +1199,8 @@ certificate can be checked offline, the cryptography matches the W3C test vector
 \section{Reproducing the Results}
 \label{app:reproduce}
 
-The repository contains everything needed to repeat the measurements in this report. The
+The repository at \url{https://github.com/larsw/jip} contains everything needed to repeat
+the measurements in this report. The
 commands below assume Docker with Compose v2, \code{curl}, and \code{jq} for the demo, and
 Maven with Java 21 or later for the local build.
 
@@ -1222,8 +1223,13 @@ certificate classes are subclasses of \code{prov:Entity}. The two functions are 
 \code{sd:Function} from SPARQL 1.1 Service Description~\cite{sparqlsd}, and \code{jip:VersionedDatasetTDB2} as a
 subclass of \code{ja:RDFDataset}. The file also describes \code{jip:dataVersionComponent}, a
 context symbol the module uses internally. The test \code{VocabularyTest} fails if the file and
-the code disagree about which terms exist. Publishing the file at
-\mbox{\url{https://larsw.github.io/jip}} would make the namespace IRI dereferenceable.
+the code disagree about which terms exist.
+
+A GitHub Actions workflow publishes the file with GitHub Pages, so the namespace IRI
+\mbox{\url{https://larsw.github.io/jip}} resolves to a page that describes each term. GitHub
+Pages can't negotiate content types, so the page is HTML. It embeds the vocabulary as JSON-LD
+and links to Turtle, JSON-LD, and N-Triples versions with \code{<link rel="alternate">}
+elements.
 
 \begin{table}[ht]
 \centering

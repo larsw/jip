@@ -63,7 +63,7 @@ The data version is available in four places:
 
 - `jip:dataVersion()` returns the version of the snapshot the query reads
   (`PREFIX jip: <https://larsw.github.io/jip#>`; the terms are defined in
-  [`vocab/jip.ttl`](vocab/jip.ttl)).
+  [`vocab/jip.ttl`](vocab/jip.ttl) and published at <https://larsw.github.io/jip>).
 - `jip:tdbDataVersion()` returns TDB2's own in-memory counter, which restarts at 0.
 - `GET /$/provenance/version/{dataset}` returns both as JSON.
 - Responses that read or wrote a versioned dataset carry the `X-Dataset-Version` and
@@ -131,5 +131,6 @@ src/main/java/org/example/jena/provenance/
 docker/       Dockerfile, Fuseki configuration, shiro.ini, entrypoint
 docs/         design notes and the whitepaper
 vocab/        jip.ttl, the jip: vocabulary (RDFS/OWL)
-scripts/      demo and whitepaper build
+scripts/      demo, whitepaper build, vocabulary site build
+.github/      workflow that publishes the vocabulary with GitHub Pages
 ```

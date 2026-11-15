@@ -7,3 +7,4 @@ target/
 /run/
 /demo-out/
 /docs/whitepaper/build/
+/build/

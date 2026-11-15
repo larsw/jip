@@ -153,6 +153,7 @@ jip:dataVersion
     rdfs:label "data version"@en ;
     rdfs:comment """As a property: the persistent data version of a dataset state. It starts at 0
 and goes up by one on every committed write transaction.
+
 As a SPARQL function, jip:dataVersion(): the persistent data version of the snapshot the query
 reads, or the last committed version outside a transaction. It is an error on a dataset that is
 not a jip:VersionedDatasetTDB2."""@en ;
