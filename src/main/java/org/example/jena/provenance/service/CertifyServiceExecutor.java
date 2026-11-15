@@ -20,6 +20,7 @@ import org.apache.jena.sparql.algebra.op.*;
 import org.apache.jena.sparql.core.DatasetGraph;
 import org.apache.jena.sparql.core.Var;
 import org.apache.jena.sparql.engine.ExecutionContext;
+import org.apache.jena.sparql.engine.Rename;
 import org.apache.jena.sparql.engine.QueryIterator;
 import org.apache.jena.sparql.engine.binding.Binding;
 import org.apache.jena.sparql.engine.binding.BindingBuilder;
@@ -197,7 +198,8 @@ public class CertifyServiceExecutor implements ChainingServiceExecutor {
 
     private static String patternText(Op inner) {
         try {
-            return OpAsQuery.asQuery(inner).toString().strip();
+            // Undo the algebra's scope renaming (?/p) so the text reads like the query.
+            return OpAsQuery.asQuery(Rename.reverseVarRename(inner, true)).toString().strip();
         } catch (RuntimeException ex) {
             return inner.toString().strip();
         }

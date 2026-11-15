@@ -122,7 +122,8 @@ class CertifyServiceTest {
         Graph g = store.get(cert).orElseThrow();
         assertTrue(g.contains(Node.ANY, Vocab.ordered, NodeFactory.createLiteralDT("true", org.apache.jena.datatypes.xsd.XSDDatatype.XSDboolean)));
         assertTrue(g.contains(Node.ANY, Vocab.queryText, Node.ANY), "full query recorded");
-        assertTrue(g.contains(Node.ANY, Vocab.servicePattern, Node.ANY), "service pattern recorded");
+        String pattern = g.find(Node.ANY, Vocab.servicePattern, Node.ANY).next().getObject().getLiteralLexicalForm();
+        assertTrue(pattern.contains("?p") && !pattern.contains("?/p"), "service pattern recorded with original names: " + pattern);
         assertTrue(g.contains(Node.ANY, Vocab.provSpecializationOf, NodeFactory.createURI("https://example.org/ds")));
 
         // Order is part of an ordered certificate.

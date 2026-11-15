@@ -226,3 +226,29 @@ counter persisted.
   of scope.
 - If one request touches several versioned datasets, the headers report the last
   one that was observed.
+
+## 7. Implementation notes
+
+These are the places where building the PoC refined the plan above.
+
+- **Finding the component.** ARQ evaluates against TDB2's storage object (`DatasetGraphTDB`),
+  not the switchable container, and that storage object gets a new `Context` on compaction.
+  So the component is looked up through the coordinator's `listExternals()`, which survives
+  compaction, rather than only through the dataset context.
+- **`jip:dataVersion()` outside a transaction.** TDB2 autocommits each access, so there is no
+  single snapshot, and the function returns the last committed version. The certify SERVICE
+  instead opens its own read transaction, so its version and its data always match.
+- **TDB2 outside a transaction (embedded use).** In Jena 6.2.0, lazily evaluated patterns fail
+  outside a transaction even without this module. Embedded callers must use
+  `Txn.executeRead`; Fuseki always does.
+- **Error status.** A refused certification (unversioned dataset, cap exceeded, write
+  transaction) reaches the client as HTTP 500, because Fuseki maps execution-time exceptions
+  to 500.
+- **Docker security.** In UI mode Fuseki writes a `shiro.ini` that limits `/$/**` to localhost.
+  The image installs one that additionally opens `/$/provenance/**` (read-only) to everyone.
+- **Recorded pattern text.** `jip:servicePattern` is written after undoing the algebra's scope
+  renaming (`?/p` → `?p`), so it reads like the query.
+- **Measured cost.** Digesting 10,000 rows takes about 1 s, well inside the 10 s
+  canonicalization limit, which also stops the W3C poison-graph test case.
+- **Packaging.** titanium-rdfc is shaded **and relocated**, because the Fuseki jar already
+  bundles other versions of `com.apicatalog.rdf.*`.
