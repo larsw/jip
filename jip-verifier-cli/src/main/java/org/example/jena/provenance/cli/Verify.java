@@ -1,5 +1,6 @@
 package org.example.jena.provenance.cli;
 
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.Optional;
 
@@ -29,19 +30,32 @@ public final class Verify {
         String expectKey = null;
         for ( int i = 0 ; i < args.length ; i++ ) {
             String a = args[i];
-            String next = i + 1 < args.length ? args[i + 1] : null;
             switch (a) {
-                case "--results", "-r" -> { results = path(next); i++; }
-                case "--cert", "-c" -> { cert = path(next); i++; }
-                case "--expect-key", "-k" -> { expectKey = next; i++; }
+                case "--results", "-r", "--cert", "-c", "--expect-key", "-k" -> {
+                    String value = i + 1 < args.length ? args[i + 1] : null;
+                    // A following option is a forgotten value, not a file; write ./-name for a
+                    // file whose name starts with '-'.
+                    if ( value == null || value.isEmpty() || value.startsWith("-") )
+                        return usageError("Missing value for " + a);
+                    i++;
+                    try {
+                        switch (a) {
+                            case "--results", "-r" -> results = Path.of(value);
+                            case "--cert", "-c" -> cert = Path.of(value);
+                            default -> expectKey = value;
+                        }
+                    } catch (InvalidPathException ex) {
+                        return usageError("Bad file name for " + a + ": " + ex.getMessage());
+                    }
+                }
                 case "--help", "-h" -> { usage(); return 0; }
-                default -> { System.err.println("Unknown argument: " + a); usage(); return 2; }
+                default -> { return usageError("Unknown argument: " + a); }
             }
         }
-        if ( results == null || cert == null ) {
-            usage();
-            return 2;
-        }
+        if ( results == null )
+            return usageError("Missing --results");
+        if ( cert == null )
+            return usageError("Missing --cert");
         JenaSystem.init();
         try {
             CertificateVerifier.Report report = CertificateVerifier.verify(cert, results, Optional.ofNullable(expectKey));
@@ -66,10 +80,10 @@ public final class Verify {
         System.out.println(r.valid() ? "VERIFIED" : "NOT VERIFIED");
     }
 
-    private static Path path(String s) {
-        if ( s == null )
-            throw new IllegalArgumentException("Missing file argument");
-        return Path.of(s);
+    private static int usageError(String message) {
+        System.err.println("Error: " + message);
+        usage();
+        return 2;
     }
 
     private static void usage() {
