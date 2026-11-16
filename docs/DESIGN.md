@@ -207,7 +207,7 @@ counter persisted.
 
 ## 5. Packaging
 
-- **Build:** one Maven module, `org.example.jena:jena-intrinsic-provenance:0.1.0-SNAPSHOT`,
+- **Build:** one Maven module, `org.example.jena:jena-intrinsic-provenance:0.9.0`,
   package `org.example.jena.provenance`. Jena is `provided`, and titanium-rdfc is
   shaded into the jar.
 - **Registration:** a `JenaSubsystemLifecycle` registers the assembler, the

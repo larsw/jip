@@ -45,7 +45,7 @@ Every row has `?cert` bound to the same `<urn:uuid:…>`. Project `?cert` explic
 ```bash
 curl -H 'Accept: text/turtle' "http://localhost:3030/\$/provenance/certificate/<uuid>" > certificate.ttl
 
-docker run --rm -v "$PWD:/data:ro" jena-intrinsic-provenance:0.1.0 \
+docker run --rm -v "$PWD:/data:ro" jena-intrinsic-provenance:0.9.0 \
   verify --results /data/results.srj --cert /data/certificate.ttl --expect-key did:key:z6Mk…
 ```
 

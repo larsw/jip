@@ -10,7 +10,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 BASE=http://localhost:3030
-IMAGE=jena-intrinsic-provenance:0.1.0
+IMAGE=jena-intrinsic-provenance:0.9.0
 OUT="$PWD/demo-out"
 mkdir -p "$OUT"
 
