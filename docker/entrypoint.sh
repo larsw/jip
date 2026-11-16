@@ -1,7 +1,8 @@
 #!/bin/sh
 # Container entrypoint.
 #   server [fuseki args...]   run Fuseki with the provenance module (default)
-#   verify [verify args...]   run the independent certificate verifier
+#   verify [verify args...]   run the independent certificate verifier (standalone jar,
+#                             not on Fuseki's classpath)
 #   <anything else>           exec it
 set -eu
 
@@ -20,7 +21,7 @@ case "$cmd" in
          --config="${FUSEKI_CONFIG:-/opt/fuseki/config.ttl}" "$@"
     ;;
   verify)
-    exec java -cp "$CP" org.example.jena.provenance.cli.Verify "$@"
+    exec java -jar /opt/jip/jip-verify.jar "$@"
     ;;
   *)
     exec "$cmd" "$@"

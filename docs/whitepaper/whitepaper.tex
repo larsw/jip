@@ -215,8 +215,8 @@ fetch the certificate and verify the rows offline.
 \label{fig:architecture}
 \end{figure}
 
-The module runs on Java 21 and is a single Maven module loaded into the unmodified Fuseki
-server. Its vocabulary uses the namespace \code{jip:} (\code{https://larsw.xyz/jip/}) and is
+The module runs on Java 21 and is loaded into the unmodified Fuseki server. The verifier is
+a separate library that needs neither TDB2 nor Fuseki (Section~\ref{sec:verification}). Its vocabulary uses the namespace \code{jip:} (\code{https://larsw.xyz/jip/}) and is
 defined in \file{vocab/jip.ttl}. The Maven coordinates are placeholders.
 
 \subsection{Conventions}
@@ -893,9 +893,12 @@ interface, \code{CertificateStore}, so a file-based or remote store could replac
 \subsection{Verification}
 \label{sec:verification}
 
-The verifier, \longcode{org.example.jena.provenance.cli.Verify}, needs only the saved results and
-the certificate; the Docker image runs it with the command \code{verify}. It works in four
-steps:
+The verifier needs only the saved results and the certificate. Its checks are in a library,
+\file{jip-verifier}, which depends on \code{jena-arq} and titanium-rdfc but not on TDB2, Fuseki
+or the signing key, so other Java programs can verify certificates themselves. A command,
+\longcode{org.example.jena.provenance.cli.Verify}, wraps the library; it is packaged as a
+self-contained jar, and the Docker image runs it with the command \code{verify}. The
+verification works in four steps:
 
 \begin{enumerate}
 \item Check the proof against the key in the \code{did:key}. With \code{-{}-expect-key}, also
@@ -990,9 +993,11 @@ dataset. \\
 \end{tabularx}
 \end{table}
 
-The build produces one jar. Jena and Fuseki are \code{provided} dependencies, and
-titanium-rdfc is shaded in. The Docker image is built in two stages. The first stage builds
-the jar in the \longcode{maven:3.9-eclipse-temurin-21} image and runs the test suite on Java
+The Maven build has three modules: the verifier library, the verifier command, and the Fuseki
+module. The Fuseki module's jar is the one Fuseki loads. Jena and Fuseki are \code{provided}
+dependencies, and the verifier library and titanium-rdfc are shaded in. The verifier command
+is a separate jar that bundles Jena. The Docker image is built in two stages. The first stage
+builds both jars in the \longcode{maven:3.9-eclipse-temurin-21} image and runs the test suite on Java
 21. The second stage starts from \longcode{eclipse-temurin:21-jre} and downloads
 \file{jena-fuseki-server-6.2.0.jar} from Maven Central, checked against a pinned SHA-256
 hash. The server runs as an unprivileged user, with one volume for \file{/fuseki} and port

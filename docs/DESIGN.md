@@ -190,7 +190,10 @@ Only the digest of the rows is stored, never the rows themselves.
 
 ## 4. Verification
 
-The CLI `org.example.jena.provenance.cli.Verify` works as follows:
+Verification lives in the `jip-verifier` library (`CertificateVerifier`), which needs only
+`jena-arq` and titanium-rdfc. The CLI `org.example.jena.provenance.cli.Verify`
+(module `jip-verifier-cli`, packaged as the self-contained `jip-verify.jar`) parses
+arguments, calls the library and prints the report. Together they work as follows:
 
 1. It takes `--results r.srj` (SPARQL JSON), `--cert c.ttl` and optionally
    `--expect-key did:key:…`.
@@ -207,9 +210,18 @@ counter persisted.
 
 ## 5. Packaging
 
-- **Build:** one Maven module, `org.example.jena:jena-intrinsic-provenance:0.9.0`,
-  package `org.example.jena.provenance`. Jena is `provided`, and titanium-rdfc is
-  shaded into the jar.
+- **Build:** a Maven parent with three modules, all `org.example.jena:*:0.9.0`, all in
+  the package `org.example.jena.provenance`:
+  - `jip-verifier`: canonicalization, the `rs:` encoding, Data Integrity proofs
+    (`DataIntegrityProof`, signing through the `ProofSigner` interface), `did:key`
+    (`DidKey`), the certificate vocabulary (`Vocab`, which also holds the namespace) and
+    `CertificateVerifier`. It depends on `jena-arq` and titanium-rdfc only.
+  - `jip-verifier-cli`: the `Verify` command, shaded with all its dependencies into
+    `jip-verify.jar`.
+  - `jena-intrinsic-provenance` (directory `jip-fuseki`): the data version, the certify
+    SERVICE, the certificate store, `SigningKey` (a `ProofSigner`) and the Fuseki
+    module. Jena is `provided`; `jip-verifier` and titanium-rdfc are shaded into the jar,
+    so Fuseki still loads one jar.
 - **Registration:** a `JenaSubsystemLifecycle` registers the assembler, the
   functions and the service executor. A `FusekiAutoModule` adds the `/$/provenance/*`
   servlets and the header filter.
@@ -250,5 +262,7 @@ These are the places where building the PoC refined the plan above.
   renaming (`?/p` → `?p`), so it reads like the query.
 - **Measured cost.** Digesting 10,000 rows takes about 1 s, well inside the 10 s
   canonicalization limit, which also stops the W3C poison-graph test case.
-- **Packaging.** titanium-rdfc is shaded **and relocated**, because the Fuseki jar already
-  bundles other versions of `com.apicatalog.rdf.*`.
+- **Packaging.** In the Fuseki module jar, titanium-rdfc is shaded **and relocated**,
+  because the Fuseki jar already bundles other versions of `com.apicatalog.rdf.*`. The
+  verifier library declares it as an ordinary dependency and leaves shading to whoever
+  embeds it.

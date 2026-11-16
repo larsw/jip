@@ -50,6 +50,24 @@ docker run --rm -v "$PWD:/data:ro" jena-intrinsic-provenance:0.9.0 \
 ```
 
 The verifier exits with 0 if the certificate is valid, 1 if it is not, and 2 on bad input.
+Without Docker, run the standalone jar the build produces:
+
+```bash
+java -jar jip-verifier-cli/target/jip-verify.jar -r results.srj -c certificate.ttl -k did:key:z6Mk…
+```
+
+To verify from your own Java code, depend on `org.example.jena:jip-verifier`. It needs only
+`jena-arq`, not TDB2 or Fuseki:
+
+```java
+CertificateVerifier.Report report =
+    CertificateVerifier.verify(Path.of("certificate.ttl"), Path.of("results.srj"), Optional.of(trustedDidKey));
+if ( !report.valid() )
+    report.problems().forEach(System.err::println);
+```
+
+`CertificateVerifier.verify(Graph, RowSet, Optional)` takes a parsed certificate and the rows of a
+query execution instead of files.
 
 The service IRI takes two optional parameters:
 
@@ -98,11 +116,17 @@ on first start.
 ## Building
 
 ```bash
-mvn package                      # target/jena-intrinsic-provenance.jar (Jena itself is not bundled)
+mvn package                      # all three modules, see the table below
 scripts/build-whitepaper.sh      # docs/whitepaper/build/whitepaper.pdf (needs TeX Live with latexmk)
 ```
 
-To use the module with your own Fuseki 6.2.0, put the jar on the classpath next to
+| Jar | What it is |
+|---|---|
+| `jip-fuseki/target/jena-intrinsic-provenance.jar` | The Fuseki module. Jena itself is not bundled; the verifier library and titanium-rdfc (relocated) are. |
+| `jip-verifier-cli/target/jip-verify.jar` | The offline verifier, self-contained (`java -jar`). |
+| `jip-verifier/target/jip-verifier-0.9.0.jar` | The verifier library, for use as a Maven dependency. |
+
+To use the module with your own Fuseki 6.2.0, put `jena-intrinsic-provenance.jar` on the classpath next to
 `fuseki-server.jar`. [`docker/entrypoint.sh`](docker/entrypoint.sh) shows the command line.
 
 ## Limitations
@@ -115,19 +139,24 @@ To use the module with your own Fuseki 6.2.0, put the jar on the classpath next 
 - The proof is stored as RDF triples, so JSON-LD Verifiable Credential tools may not accept it.
 - A refused certification (no version, too many rows, inside a write transaction) is reported
   as HTTP 500.
-- The Maven coordinates `org.example.jena:jena-intrinsic-provenance` are placeholders.
+- The Maven coordinates (`org.example.jena:*`) are placeholders.
 
 ## Layout
 
 ```
-src/main/java/org/example/jena/provenance/
-  version/    persistent data version (transaction component, journal recovery, assembler)
-  canon/      RDFC-1.0 adapter and the result-set encoding
-  cert/       certificate builder, signing, key handling, store, verifier
-  service/    the certify SERVICE executor
-  function/   jip:dataVersion(), jip:tdbDataVersion()
-  fuseki/     Fuseki module, HTTP endpoints, header filter
-  cli/        offline verifier
+pom.xml             parent (jena-intrinsic-provenance-parent)
+jip-verifier/       verifier library; depends on jena-arq and titanium-rdfc only
+  src/main/java/org/example/jena/provenance/
+    canon/    RDFC-1.0 adapter and the result-set encoding
+    cert/     CertificateVerifier, Data Integrity proofs, did:key, vocabulary terms
+jip-verifier-cli/   the offline verifier command (cli/Verify), packaged as jip-verify.jar
+jip-fuseki/         the Fuseki module (artifact jena-intrinsic-provenance); uses jip-verifier
+  src/main/java/org/example/jena/provenance/
+    version/  persistent data version (transaction component, journal recovery, assembler)
+    cert/     certificate builder, signing key, key handling, store
+    service/  the certify SERVICE executor
+    function/ jip:dataVersion(), jip:tdbDataVersion()
+    fuseki/   Fuseki module, HTTP endpoints, header filter
 docker/       Dockerfile, Fuseki configuration, shiro.ini, entrypoint
 docs/         design notes and the whitepaper
 vocab/        jip.ttl, the jip: vocabulary (RDFS/OWL)

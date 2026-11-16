@@ -4,17 +4,23 @@
 #   docker build -f docker/Dockerfile -t jena-intrinsic-provenance:0.9.0 .
 # Tests run during the build (on JDK 21); skip with --build-arg SKIP_TESTS=true.
 
-# ---- Build the module (shaded jar)
+# ---- Build the modules: the Fuseki module jar and the verifier CLI jar (both shaded)
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
 COPY pom.xml ./
+COPY jip-verifier/pom.xml ./jip-verifier/
+COPY jip-verifier-cli/pom.xml ./jip-verifier-cli/
+COPY jip-fuseki/pom.xml ./jip-fuseki/
 RUN --mount=type=cache,target=/root/.m2 mvn -B -q dependency:go-offline || true
-COPY src ./src
+COPY jip-verifier/src ./jip-verifier/src
+COPY jip-verifier-cli/src ./jip-verifier-cli/src
+COPY jip-fuseki/src ./jip-fuseki/src
 COPY docker/config.ttl ./docker/config.ttl
 COPY vocab ./vocab
 ARG SKIP_TESTS=false
 RUN --mount=type=cache,target=/root/.m2 mvn -B package -DskipTests=${SKIP_TESTS} 2>&1 \
-    | grep -E 'Tests run:|BUILD|ERROR|FAIL' ; test -f target/jena-intrinsic-provenance.jar
+    | grep -E 'Tests run:|BUILD|ERROR|FAIL' ; \
+    test -f jip-fuseki/target/jena-intrinsic-provenance.jar && test -f jip-verifier-cli/target/jip-verify.jar
 
 # ---- Runtime
 FROM eclipse-temurin:21-jre
@@ -32,7 +38,8 @@ RUN useradd --system --uid 10001 --home-dir /fuseki --shell /usr/sbin/nologin fu
  && chown fuseki:fuseki /fuseki \
  && chmod 0644 /opt/fuseki/fuseki-server.jar
 
-COPY --from=build /build/target/jena-intrinsic-provenance.jar /opt/fuseki/lib/
+COPY --from=build /build/jip-fuseki/target/jena-intrinsic-provenance.jar /opt/fuseki/lib/
+COPY --from=build /build/jip-verifier-cli/target/jip-verify.jar /opt/jip/jip-verify.jar
 COPY docker/config.ttl /opt/fuseki/config.ttl
 COPY docker/shiro.ini /opt/fuseki/shiro.ini
 COPY docker/entrypoint.sh /opt/fuseki/entrypoint.sh

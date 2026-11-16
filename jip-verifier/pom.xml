@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.example.jena</groupId>
+    <artifactId>jena-intrinsic-provenance-parent</artifactId>
+    <version>0.9.0</version>
+  </parent>
+
+  <artifactId>jip-verifier</artifactId>
+  <packaging>jar</packaging>
+
+  <name>Jena intrinsic provenance: verifier library</name>
+  <description>
+    Offline verification of jip result certificates: RDFC-1.0 canonicalization, the rs: result
+    encoding, eddsa-rdfc-2022 Data Integrity proofs and Ed25519 did:key. Needs only jena-arq;
+    no TDB2 or Fuseki.
+  </description>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.apache.jena</groupId>
+      <artifactId>jena-arq</artifactId>
+    </dependency>
+    <!-- RDFC-1.0. A plain dependency here; jena-intrinsic-provenance shades and relocates it
+         because Fuseki bundles other versions of com.apicatalog.rdf.* -->
+    <dependency>
+      <groupId>com.apicatalog</groupId>
+      <artifactId>titanium-rdfc</artifactId>
+    </dependency>
+  </dependencies>
+</project>

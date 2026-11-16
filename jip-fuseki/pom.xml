@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.example.jena</groupId>
+    <artifactId>jena-intrinsic-provenance-parent</artifactId>
+    <version>0.9.0</version>
+  </parent>
+
+  <artifactId>jena-intrinsic-provenance</artifactId>
+  <packaging>jar</packaging>
+
+  <name>Jena intrinsic provenance: Fuseki module</name>
+  <description>
+    Persistent TDB2 data version counter, the certify SERVICE, the certificate store and
+    signing, for Apache Jena / Fuseki. One jar for Fuseki's extension directory: the verifier
+    library and titanium-rdfc (relocated) are shaded in.
+  </description>
+
+  <properties>
+    <shade.prefix>org.example.jena.provenance.shaded</shade.prefix>
+  </properties>
+
+  <dependencies>
+    <!-- Shaded into the module jar together with titanium-rdfc -->
+    <dependency>
+      <groupId>org.example.jena</groupId>
+      <artifactId>jip-verifier</artifactId>
+    </dependency>
+
+    <!-- Jena and Fuseki are supplied at runtime by jena-fuseki-server.jar -->
+    <dependency>
+      <groupId>org.apache.jena</groupId>
+      <artifactId>jena-arq</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.jena</groupId>
+      <artifactId>jena-tdb2</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.jena</groupId>
+      <artifactId>jena-fuseki-main</artifactId>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>${project.artifactId}</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <artifactSet>
+                <includes>
+                  <include>org.example.jena:jip-verifier</include>
+                  <include>com.apicatalog:titanium-rdfc</include>
+                  <include>com.apicatalog:titanium-rdf-api</include>
+                  <include>com.apicatalog:titanium-rdf-n-quads</include>
+                </includes>
+              </artifactSet>
+              <relocations>
+                <!-- Fuseki bundles other versions of com.apicatalog.rdf.* -->
+                <relocation>
+                  <pattern>com.apicatalog</pattern>
+                  <shadedPattern>${shade.prefix}.com.apicatalog</shadedPattern>
+                </relocation>
+              </relocations>
+              <filters>
+                <filter>
+                  <artifact>com.apicatalog:*</artifact>
+                  <excludes>
+                    <exclude>module-info.class</exclude>
+                    <exclude>META-INF/versions/*/module-info.class</exclude>
+                    <exclude>META-INF/MANIFEST.MF</exclude>
+                  </excludes>
+                </filter>
+                <filter>
+                  <artifact>org.example.jena:jip-verifier</artifact>
+                  <excludes>
+                    <exclude>META-INF/MANIFEST.MF</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+              </transformers>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
