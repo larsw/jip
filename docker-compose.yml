@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    image: jena-intrinsic-provenance:0.9.0
+    image: jena-intrinsic-provenance:0.10.0
     ports:
       - "3030:3030"
     volumes:

@@ -210,7 +210,7 @@ counter persisted.
 
 ## 5. Packaging
 
-- **Build:** a Maven parent with three modules, all `org.example.jena:*:0.9.0`, all in
+- **Build:** a Maven parent with three modules, all `org.example.jena:*:0.10.0-SNAPSHOT`, all in
   the package `org.example.jena.provenance`:
   - `jip-verifier`: canonicalization, the `rs:` encoding, Data Integrity proofs
     (`DataIntegrityProof`, signing through the `ProofSigner` interface), `did:key`
