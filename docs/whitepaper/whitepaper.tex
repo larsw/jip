@@ -133,8 +133,8 @@ compaction, and crashes leave it consistent with the data. The second part is a 
 PROV-O graph that names the database state, records a SHA-256 digest of the solutions after
 RDF Dataset Canonicalization (RDFC-1.0), and carries a W3C Data Integrity proof made with the
 \code{eddsa-rdfc-2022} cryptosuite and a \code{did:key}. Optionally, an RFC~3161
-time-stamping authority co-signs the certificate's signature, which fixes when the certificate
-existed independently of the server's clock. A standalone verifier checks a saved
+time-stamping authority co-signs the certificate's signature in the background, which fixes
+when the certificate existed independently of the server's clock without delaying the query. A standalone verifier checks a saved
 result against its certificate without contacting the server. The implementation passes all 65
 tests of the W3C RDFC-1.0 test suite, reproduces the \code{eddsa-rdfc-2022} test vector byte
 for byte, and digests 10,000 solutions, the default maximum, in about one second.
@@ -218,7 +218,8 @@ fetch the certificate and verify the rows offline.
 \draw[<->, dashed] (fuseki.south) -- node[lbl, right=2pt] {signature hash /\\timestamp token} (tsa.north);
 \end{tikzpicture}
 \caption{Components of the proof of concept and the path of a certified query. If time-stamping
-authorities are configured, the certify executor asks one of them to co-sign each certificate.}
+authorities are configured, a background worker asks one of them to co-sign each certificate
+after the query has returned.}
 \label{fig:architecture}
 \end{figure}
 
@@ -804,25 +805,25 @@ optional timestamp covers the proof's signature value.}
 
 \needspace{10\baselineskip}
 \begin{lstlisting}[language=Turtle, caption={A certificate from the demo, with prefixes added and long literals shortened.}, label={lst:certificate}]
-PREFIX c:   <urn:uuid:f3b5b091-34d1-405a-adab-e7bff123fbf4#>
-PREFIX db:  <urn:uuid:68fc0d02-079b-4ba6-b452-933b28b040b5#>
-PREFIX key: <did:key:z6MkmAycJeexyFSaWGQs4nvKV61y4NiwjtZACSQG3iGQkg3i#>
+PREFIX c:   <urn:uuid:e0963ba2-6bc0-4264-9ed2-25b02f9e5a8a#>
+PREFIX db:  <urn:uuid:b3e69821-de0f-460d-b6d3-402bc1a38c8b#>
+PREFIX key: <did:key:z6MkmWjXFhHNjDJZDh3dJUmC7YSUJK3LZMXNRz4ZUmxDWKuw#>
 
-<urn:uuid:f3b5b091-34d1-405a-adab-e7bff123fbf4>
+<urn:uuid:e0963ba2-6bc0-4264-9ed2-25b02f9e5a8a>
     a jip:ResultCertificate, prov:Entity ;
     jip:certifies c:result ;
     sec:proof [
         a sec:DataIntegrityProof ;
         sec:cryptosuite "eddsa-rdfc-2022"^^sec:cryptosuiteString ;
-        sec:verificationMethod key:z6MkmAycJeexyFSaWGQs4nvKV61y4NiwjtZACSQG3iGQkg3i ;
+        sec:verificationMethod key:z6MkmWjXFhHNjDJZDh3dJUmC7YSUJK3LZMXNRz4ZUmxDWKuw ;
         sec:proofPurpose sec:assertionMethod ;
-        dcterms:created "2026-11-19T12:37:27Z"^^xsd:dateTime ;
-        sec:proofValue "z4NYp7ARtMDL...fxBYswao"^^sec:multibase ] ;
+        dcterms:created "2026-11-19T14:17:21Z"^^xsd:dateTime ;
+        sec:proofValue "zbBGTGYCN7q7...SY867XJL"^^sec:multibase ] ;
     jip:timestamp [
         a jip:RFC3161Timestamp ;
-        jip:timestampToken "MIIXawYJKoZIhvcNAQcCoIIXXDCC..."^^xsd:base64Binary ;
+        jip:timestampToken "MIIXagYJKoZIhvcNAQcCoIIXWzCC..."^^xsd:base64Binary ;
         jip:timestampAuthority <http://timestamp.digicert.com> ;
-        jip:timestampTime "2026-11-19T12:37:28Z"^^xsd:dateTime ] .
+        jip:timestampTime "2026-11-19T14:17:21Z"^^xsd:dateTime ] .
 
 c:result a jip:SolutionSequence, prov:Entity ;
     prov:wasGeneratedBy c:exec ;
@@ -836,9 +837,9 @@ c:result a jip:SolutionSequence, prov:Entity ;
 
 c:exec a jip:QueryExecution, prov:Activity ;
     prov:used db:v1 ;
-    prov:wasAssociatedWith <did:key:z6MkmAycJeexyFSaWGQs4nvKV61y4NiwjtZACSQG3iGQkg3i> ;
-    prov:startedAtTime "2026-11-19T12:37:27.671103423Z"^^xsd:dateTime ;
-    prov:endedAtTime   "2026-11-19T12:37:27.698999830Z"^^xsd:dateTime ;
+    prov:wasAssociatedWith <did:key:z6MkmWjXFhHNjDJZDh3dJUmC7YSUJK3LZMXNRz4ZUmxDWKuw> ;
+    prov:startedAtTime "2026-11-19T14:17:21.123312673Z"^^xsd:dateTime ;
+    prov:endedAtTime   "2026-11-19T14:17:21.145978112Z"^^xsd:dateTime ;
     jip:servicePattern "SELECT ?name ?email WHERE { ... } ORDER BY ?name" ;
     jip:queryText "PREFIX jip: <https://larsw.xyz/jip/> ..." .
 
@@ -846,9 +847,9 @@ db:v1 a jip:DatasetState, prov:Entity ;
     jip:dataVersion 1 ;
     prov:specializationOf <https://example.org/datasets/ds> .
 
-<did:key:z6MkmAycJeexyFSaWGQs4nvKV61y4NiwjtZACSQG3iGQkg3i>
+<did:key:z6MkmWjXFhHNjDJZDh3dJUmC7YSUJK3LZMXNRz4ZUmxDWKuw>
     a prov:SoftwareAgent ;
-    rdfs:label "jena-intrinsic-provenance 0.10.0 on Apache Jena 6.2.0" .
+    rdfs:label "jena-intrinsic-provenance 0.11.0 on Apache Jena 6.2.0" .
 \end{lstlisting}
 
 The certificate holds the digest of the rows and never the rows themselves, so its size
@@ -901,9 +902,9 @@ The token is added after signing, as a node of its own:
 \begin{lstlisting}[language=Turtle, numbers=none]
 <C> jip:timestamp _:t .
 _:t a jip:RFC3161Timestamp ;
-    jip:timestampToken "MIIXawYJKoZIhvcNAQcCoIIXXDCC..."^^xsd:base64Binary ;
+    jip:timestampToken "MIIXagYJKoZIhvcNAQcCoIIXWzCC..."^^xsd:base64Binary ;
     jip:timestampAuthority <http://timestamp.digicert.com> ;
-    jip:timestampTime "2026-11-19T12:37:28Z"^^xsd:dateTime .
+    jip:timestampTime "2026-11-19T14:17:21Z"^^xsd:dateTime .
 \end{lstlisting}
 Only the token is evidence. The authority and the time are copies for queries over the
 certificate store; the verifier reports what the token says. The timestamp triples are not part
@@ -912,15 +913,53 @@ of the timestamp nodes before it checks the proof. Removing them can't hide a ch
 removing any signed triple makes the proof fail.
 
 The setting \code{jip:timestampAuthorities} lists TSA URLs in priority order. For each
-certificate the executor asks them one at a time, each with its own timeout
-(\code{jip:timestampTimeout}, 5 seconds by default), and uses the first valid token. A TSA that
-fails is moved to the end of the list for 60 seconds, so one that is down costs one timeout a
-minute rather than one per certificate; it is still tried if all others fail. The policy
-(\code{jip:timestampPolicy}) decides what happens when no TSA answers: \code{optional}, the
-default, issues the certificate without a timestamp and logs a warning; \code{required} fails
-the certification. The environment variables \code{PROVENANCE\_TSA\_URLS},
-\code{PROVENANCE\_TSA\_POLICY}, and \code{PROVENANCE\_TSA\_TIMEOUT} override the three settings.
-Without any of them, certificates have no timestamp and are exactly as before.
+certificate they are asked one at a time, each with its own timeout
+(\code{jip:timestampTimeout}, 5 seconds by default), and the first valid token is used. A TSA
+that fails is moved to the end of the list for 60 seconds, so one that is down costs one
+timeout a minute rather than one per certificate; it is still tried if all others fail.
+
+A TSA request is a network round trip to a third party, typically a few hundred milliseconds,
+and several timeouts if TSAs are down. By default (\code{jip:timestampMode async}) the query
+doesn't wait for it. The executor stores the signed certificate and, in the same write
+transaction, records it as pending with a triple
+\code{<C> jip:timestampPendingSince "..."} in the store's graph
+\code{jip:pendingTimestamps}. The query returns at once. A background thread fetches the token,
+then adds the timestamp triples to the certificate graph and removes the pending triple in one
+transaction, and only if the certificate is still pending, so a certificate can't receive two
+tokens. If no TSA answers, it tries again after 5, 15, and 30 seconds, 1, 2, and 5 minutes, and
+then every 10 minutes. One thread per configuration fetches the tokens one after another,
+because public TSAs limit request rates. Because the pending state is in the store, a restart
+loses nothing: when Fuseki has started, the module queues the pending certificates again.
+
+While a certificate is pending, its endpoint answers \code{202 Accepted} instead of the
+certificate, with \code{Retry-After} set to the seconds until the next attempt and a short JSON
+status (Example~\ref{lst:pending}). A client fetches the certificate again after that time and
+gets it with its timestamp. The status 202 fits better than 503: the server is healthy and
+the certificate exists, its processing just isn't finished.
+
+\needspace{6\baselineskip}
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize, caption={The certificate endpoint right after the certified query of the demo.}, label={lst:pending}]
+HTTP/1.1 202 Accepted
+Retry-After: 1
+Content-Type: application/json
+
+{"certificate":"urn:uuid:e0963ba2-6bc0-4264-9ed2-25b02f9e5a8a","status":"timestamp-pending",
+ "pendingSince":"2026-11-19T14:17:21.155729227Z","retryAfter":1}
+\end{lstlisting}
+
+The policy (\code{jip:timestampPolicy}) decides what happens when no TSA answers. With
+\code{optional}, the default, retries stop after \code{jip:timestampMaxWait} (10 minutes by
+default) and the certificate is released without a timestamp. With \code{required}, the
+certificate stays pending and the retries continue, so the endpoint keeps answering 202 until a
+TSA answers. The mode \code{sync} keeps the earlier behavior: the query waits for the token;
+without one, \code{optional} issues the certificate as it is and \code{required} fails the
+certification. Environment variables (\code{PROVENANCE\_TSA\_URLS}, \code{\_MODE},
+\code{\_POLICY}, \code{\_TIMEOUT}, and \code{\_MAX\_WAIT}) override the settings. Without a TSA
+list, certificates have no timestamp and are never pending.
+
+The read-only SPARQL view of the certificate store (Section~\ref{sec:store}) is a plain TDB2
+service, so it shows a pending certificate already, signed but without its timestamp; the
+\code{jip:pendingTimestamps} graph tells the two apart.
 
 The protocol and CMS handling come from BouncyCastle~\cite{bouncycastle}, because the JDK has no
 public API for either. BouncyCastle also handles the Ed25519 key encodings (PKCS\#8,
@@ -942,13 +981,13 @@ Example~\ref{lst:key} shows.
 \needspace{11\baselineskip}
 \begin{lstlisting}[caption={The public key as returned by \code{GET /\$/provenance/key} (PEM shortened).}, label={lst:key}]
 {
-  "id": "did:key:z6MkmAycJeexyFSaWGQs4nvKV61y4NiwjtZACSQG3iGQkg3i",
-  "verificationMethod": "did:key:z6MkmA...kg3i#z6MkmA...kg3i",
+  "id": "did:key:z6MkmWjXFhHNjDJZDh3dJUmC7YSUJK3LZMXNRz4ZUmxDWKuw",
+  "verificationMethod": "did:key:z6MkmW...WKuw#z6MkmW...WKuw",
   "type": "Multikey",
-  "publicKeyMultibase": "z6MkmAycJeexyFSaWGQs4nvKV61y4NiwjtZACSQG3iGQkg3i",
+  "publicKeyMultibase": "z6MkmWjXFhHNjDJZDh3dJUmC7YSUJK3LZMXNRz4ZUmxDWKuw",
   "publicKeyJwk": { "kty": "OKP", "crv": "Ed25519",
-                    "x": "Y9Xua7TLVKoyeIVcyRVPu9jbYrKC_tE29Kh58ZE2nOE" },
-  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAY9Xua7TL..."
+                    "x": "aOWeg4aZ115R9Vl559XfjwxGRTlXBpCfZ738anS6Ya4" },
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAaOWeg4aZ..."
 }
 \end{lstlisting}
 
@@ -1005,19 +1044,19 @@ results with one email address changed.
 
 \needspace{18\baselineskip}
 \begin{lstlisting}[basicstyle=\ttfamily\footnotesize, caption={Verifier output for the demo results and for a tampered copy (key IRIs shortened, TSA line wrapped).}, label={lst:verify}]
-$ verify -r results.srj -c certificate.ttl -k did:key:z6MkmA...kg3i
-Certificate     : urn:uuid:f3b5b091-34d1-405a-adab-e7bff123fbf4
-Signed by       : did:key:z6MkmA...kg3i#z6MkmA...kg3i
+$ verify -r results.srj -c certificate.ttl -k did:key:z6MkmW...WKuw
+Certificate     : urn:uuid:e0963ba2-6bc0-4264-9ed2-25b02f9e5a8a
+Signed by       : did:key:z6MkmW...WKuw#z6MkmW...WKuw
 Signature       : OK
-Timestamp       : OK  2026-11-19T12:37:28Z  (trusted)
+Timestamp       : OK  2026-11-19T14:17:21Z  (trusted)
   TSA           : C=US,O=DigiCert\, Inc.,CN=DigiCert SHA256 RSA4096 Timestamp
                   Responder 2026 1  via http://timestamp.digicert.com
-Dataset state   : urn:uuid:68fc0d02-079b-4ba6-b452-933b28b040b5#v1  (version 1)
+Dataset state   : urn:uuid:b3e69821-de0f-460d-b6d3-402bc1a38c8b#v1  (version 1)
 Solutions       : 3 certified, 3 row(s) carry this certificate
 Result digest   : OK
 VERIFIED
 
-$ verify -r results-tampered.srj -c certificate.ttl -k did:key:z6MkmA...kg3i
+$ verify -r results-tampered.srj -c certificate.ttl -k did:key:z6MkmW...WKuw
 ...
 Result digest   : MISMATCH
 Problem         : Result digest mismatch: certificate feb2d70a...f06efebe, rows b1c94dd9...92ecdc56
@@ -1080,7 +1119,8 @@ area.
 Endpoint & Returns \\
 \midrule
 \code{GET /\$/provenance/certificate/\{uuid\}} & The certificate as Turtle, JSON-LD, N-Triples,
-N-Quads, or RDF/XML, chosen by \code{Accept} or \code{?format=}. \\
+N-Quads, or RDF/XML, chosen by \code{Accept} or \code{?format=}. While its timestamp is
+pending: \code{202 Accepted} with \code{Retry-After} (Example~\ref{lst:pending}). \\
 \code{GET /\$/provenance/key} & The public key (Example~\ref{lst:key}). \\
 \code{GET /\$/provenance/version/\{dataset\}} & The persistent and internal versions of a
 dataset. \\
@@ -1109,7 +1149,7 @@ the same image without installing Java.
 \subsection{Test Suite}
 \label{sec:tests}
 
-The build runs 131 tests, listed in Table~\ref{tab:tests}. They pass on OpenJDK 25 on the
+The build runs 137 tests, listed in Table~\ref{tab:tests}. They pass on OpenJDK 25 on the
 development machine and on Java 21 during the Docker build.
 
 \begin{table}[ht]
@@ -1136,18 +1176,20 @@ trust anchors, a token for another signature, a corrupted token, TSA certificate
 \code{genTime}, reply and request matching. \\
 \code{TimestampAuthoritiesTest} & 4 & Fallback through a refusing and an unreachable TSA,
 cooldown order, configuration parsing. \\
-\code{CertifyServiceTest} & 13 & Round trips for ordered and unordered results, tampering,
+\code{CertifyServiceTest} & 18 & Round trips for ordered and unordered results, tampering,
 both empty-result modes, variable names, the cap, unversioned datasets and \code{SILENT}, the
 write-transaction refusal, versions after updates, correlated calls, timestamped
-certificates, both timestamp policies. \\
+certificates, both timestamp policies in both modes, a query that doesn't wait for a held-back
+TSA, resuming pending timestamps after a restart without a second token. \\
 \code{CanonicalizationCapacityTest} & 1 & Digest time at 10,000 solutions. \\
-\code{FusekiIntegrationTest} & 1 & End to end over HTTP with \file{docker/config.ttl}. \\
+\code{FusekiIntegrationTest} & 2 & End to end over HTTP with \file{docker/config.ttl}; 202
+with \code{Retry-After} while a timestamp is pending, then 200. \\
 \code{VocabularyTest} & 3 & \file{vocab/jip.ttl} defines every \code{jip:} term the code uses,
 and no others (Appendix~\ref{app:vocab}). \\
 \code{VerifyTest} & 9 & Exit status of the verifier command for good, bad, and missing
 arguments, including the timestamp options. \\
 \midrule
-Total & 131 & \\
+Total & 137 & \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1185,20 +1227,23 @@ FreeTSA.
 \code{X-Dataset-Version: 1}. \\
 2 & Run the certified query (Example~\ref{lst:query}) & Three rows with one certificate;
 \code{X-Dataset-Version: 1}. \\
-3 & Verify in a separate container & \code{VERIFIED}, exit status 0. Timestamp from
-DigiCert, trusted through the JVM trust store, about one second after the proof's creation
+3 & Fetch the certificate right after the query & \code{202 Accepted},
+\code{Retry-After: 1}, status \code{timestamp-pending} (Example~\ref{lst:pending}); about a
+second later 200 with the timestamped certificate. \\
+4 & Verify in a separate container & \code{VERIFIED}, exit status 0. Timestamp from
+DigiCert, trusted through the JVM trust store, in the same second as the proof's creation
 time. \\
-4 & Change one email address and verify & Digest mismatch, exit status 1. \\
-5 & Insert a fourth person, query again & Update header 2; new certificate for 4 solutions
+5 & Change one email address and verify & Digest mismatch, exit status 1. \\
+6 & Insert a fourth person, query again & Update header 2; new certificate for 4 solutions
 at version 2, verified. \\
-6 & Certify a pattern with no match & One row with only \code{?cert}; certificate with 0
+7 & Certify a pattern with no match & One row with only \code{?cert}; certificate with 0
 solutions, verified. \\
-7 & Compare the counters & Persistent 2, internal 2. \\
-8 & Restart the container & Persistent 2, internal 0. \\
-9 & Insert one more person & Persistent 3, internal 1. \\
-10 & Query the certificate store & Three certificates, at versions 1, 2, and 2, each
+8 & Compare the counters & Persistent 2, internal 2. \\
+9 & Restart the container & Persistent 2, internal 0. \\
+10 & Insert one more person & Persistent 3, internal 1. \\
+11 & Query the certificate store & Three certificates, at versions 1, 2, and 2, each
 timestamped by DigiCert. \\
-11 & Put an unreachable TSA first in the list, query again & The server logs the failed TSA
+12 & Put an unreachable TSA first in the list, query again & The server logs the failed TSA
 and falls back to DigiCert; the new certificate at version 3 verifies. \\
 \bottomrule
 \end{tabularx}
@@ -1277,8 +1322,9 @@ whose name includes the database ID and version.
   without the module don't advance the version. A byte-for-byte copy of the database
   directory shares the original's database ID; if both copies receive writes, the pair of ID
   and version is no longer unique.
-\item Each timestamped certificate costs one outgoing HTTP request while the query runs, and
-  public TSAs limit request rates. Real use needs an own or contracted TSA. TSA certificates
+\item Each timestamped certificate costs one outgoing HTTP request, and public TSAs limit
+  request rates. The requests run one at a time in the background, so a burst of certificates
+  queues up and stays pending for longer. Real use needs an own or contracted TSA. TSA certificates
   are not checked for revocation, and a timestamp is only as trustworthy as the TSA's key.
 \item Refused certifications reach the client as HTTP 500 instead of a 4xx status.
 \item In embedded use with Jena 6.2.0, queries over TDB2 have to run inside a transaction,
@@ -1321,7 +1367,8 @@ solutions of any pattern: the solutions are encoded as RDF, canonicalized with R
 hashed, and recorded in a PROV-O certificate signed with \code{eddsa-rdfc-2022}. The
 certificate can be checked offline, the cryptography matches the W3C test vectors, and
 10,000 solutions take about a second to digest. An optional RFC~3161 timestamp over the
-signature adds evidence of when a certificate existed that doesn't depend on the server.
+signature adds evidence of when a certificate existed that doesn't depend on the server, and
+because it is fetched in the background, it doesn't slow down the query.
 
 % ====================================================================================
 % Keep floats from drifting into the appendices or the bibliography.
@@ -1341,7 +1388,7 @@ Maven with Java 21 or later for the local build.
 \begin{lstlisting}[language=bash, caption={Commands to build, test, and run the demo.}, label={lst:reproduce}]
 docker compose up -d --build    # build the module, run the tests on Java 21, start Fuseki
 scripts/demo.sh --reset         # end-to-end demo; --reset deletes the demo volume
-mvn test                        # the 131 tests on the local JDK
+mvn test                        # the 137 tests on the local JDK
 scripts/build-whitepaper.sh     # this report
 \end{lstlisting}
 
@@ -1386,6 +1433,8 @@ specializes. \\
 \code{jip:timestampAuthorities} & Server setting: TSA URLs in priority order. \\
 \code{jip:timestampPolicy} & Server setting: \code{optional} or \code{required}. \\
 \code{jip:timestampTimeout} & Server setting: time allowed per TSA, in milliseconds. \\
+\code{jip:timestampMode} & Server setting: \code{async} or \code{sync}. \\
+\code{jip:timestampMaxWait} & Server setting: how long an optional timestamp is retried. \\
 \code{jip:dataVersion()} & Function: persistent version of the current snapshot. \\
 \code{jip:tdbDataVersion()} & Function: TDB2's internal counter. \\
 \midrule
@@ -1408,6 +1457,8 @@ SPARQL text. \\
 \code{jip:timestampToken} & The DER time-stamp token, base64-encoded. \\
 \code{jip:timestampAuthority}, \code{jip:timestampTime} & Copies of the issuing TSA and its time,
 for queries. \\
+\code{jip:pendingTimestamps} & Graph in the certificate store listing pending certificates. \\
+\code{jip:timestampPendingSince} & When a certificate started waiting for its timestamp. \\
 \bottomrule
 \end{tabularx}
 \end{table}
