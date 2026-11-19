@@ -69,6 +69,13 @@ class VerifyTest {
     }
 
     @Test
+    void timestampOptions() {
+        assertEquals(1, Verify.run("--results", results, "--cert", cert, "--tsa-trust", "none", "--require-timestamp"));
+        assertEquals(2, Verify.run("--results", results, "--cert", cert, "--tsa-trust"));
+        assertEquals(2, Verify.run("--results", results, "--cert", cert, "--tsa-trust", tmp.resolve("missing.pem").toString()));
+    }
+
+    @Test
     void unreadableInputIsError() {
         assertEquals(2, Verify.run("--results", tmp.resolve("missing.srj").toString(), "--cert", cert));
         assertEquals(2, Verify.run("--results", results, "--cert", tmp.resolve("missing.ttl").toString()));

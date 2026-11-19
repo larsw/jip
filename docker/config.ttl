@@ -18,6 +18,12 @@ PREFIX jip:     <https://larsw.xyz/jip/>
    # Largest solution sequence a certify SERVICE call may return.
    ja:context [ ja:cxtName "https://larsw.xyz/jip/maxSolutions" ;
                 ja:cxtValue "10000" ] .
+   # RFC 3161 timestamps (off unless configured). The environment variables
+   # PROVENANCE_TSA_URLS / _POLICY / _TIMEOUT override these; docker-compose.yml sets them.
+   # ja:context [ ja:cxtName "https://larsw.xyz/jip/timestampAuthorities" ;
+   #              ja:cxtValue "http://timestamp.digicert.com http://timestamp.sectigo.com" ] ;
+   # ja:context [ ja:cxtName "https://larsw.xyz/jip/timestampPolicy" ; ja:cxtValue "optional" ] ;
+   # ja:context [ ja:cxtName "https://larsw.xyz/jip/timestampTimeout" ; ja:cxtValue "5000" ] .
 
 ## ---- Versioned data
 

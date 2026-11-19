@@ -5,11 +5,13 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.cert.TrustAnchor;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeSet;
 
 import org.apache.jena.graph.Graph;
@@ -32,6 +34,7 @@ import xyz.larsw.jip.canon.ResultSetEncoding;
  * Verifies a certificate and the result rows it claims to certify, independently of the server.
  * <ol>
  * <li>Check the {@code eddsa-rdfc-2022} proof against its {@code did:key} (optionally pinned).</li>
+ * <li>Check any RFC 3161 timestamps over the signature ({@link CertificateTimestamps}).</li>
  * <li>Select the rows carrying this certificate's IRI.</li>
  * <li>Rebuild the {@code rs:} encoding from the certified variables ({@code rs:index} only if
  * the certificate says ordered), canonicalize with RDFC-1.0, compare SHA-256 digests.</li>
@@ -49,6 +52,11 @@ import xyz.larsw.jip.canon.ResultSetEncoding;
 public final class CertificateVerifier {
     private CertificateVerifier() {}
 
+    /**
+     * @param timestamps  the RFC 3161 timestamps on the certificate, each checked; a broken
+     *                    timestamp is also listed in {@code problems}, an untrusted one is not
+     *                    (unless a timestamp is required, see {@link Options})
+     */
     public record Report(Node certificate,
                          boolean signatureValid,
                          boolean digestValid,
@@ -57,9 +65,24 @@ public final class CertificateVerifier {
                          Node datasetState,
                          int solutionCount,
                          int rowsChecked,
+                         List<CertificateTimestamps.Check> timestamps,
                          List<String> problems) {
         public boolean valid() {
             return signatureValid && digestValid && problems.isEmpty();
+        }
+    }
+
+    /**
+     * What to check besides the signature and the digest.
+     *
+     * @param expectedKey       the did:key the signature must come from, if pinned
+     * @param tsaTrustAnchors   trust anchors for TSA certificates; empty to skip the chain check
+     * @param requireTimestamp  fail unless at least one timestamp is valid and not untrusted
+     */
+    public record Options(Optional<String> expectedKey, Optional<Set<TrustAnchor>> tsaTrustAnchors, boolean requireTimestamp) {
+        /** Optional key pin; TSAs checked against the JVM trust store; timestamps optional. */
+        public static Options defaults(Optional<String> expectedKey) {
+            return new Options(expectedKey, Optional.of(Rfc3161.systemTrustAnchors()), false);
         }
     }
 
@@ -81,9 +104,14 @@ public final class CertificateVerifier {
      * @throws org.apache.jena.riot.RiotException if a file cannot be parsed
      */
     public static Report verify(Path certificateFile, Path resultsFile, Optional<String> expectedKey) {
+        return verify(certificateFile, resultsFile, Options.defaults(expectedKey));
+    }
+
+    /** As {@link #verify(Path, Path, Optional)}, with all options. */
+    public static Report verify(Path certificateFile, Path resultsFile, Options options) {
         Graph certificate = readCertificate(certificateFile);
         Results results = readResults(resultsFile);
-        return verify(certificate, results.variables(), results.rows(), expectedKey);
+        return verify(certificate, results.variables(), results.rows(), options);
     }
 
     /**
@@ -105,23 +133,39 @@ public final class CertificateVerifier {
      * @param expectedKey  optional did:key the signature must come from
      */
     public static Report verify(Graph certificate, Collection<String> resultVars, List<Binding> rows, Optional<String> expectedKey) {
+        return verify(certificate, resultVars, rows, Options.defaults(expectedKey));
+    }
+
+    /** As {@link #verify(Graph, Collection, List, Optional)}, with all options. */
+    public static Report verify(Graph certificate, Collection<String> resultVars, List<Binding> rows, Options options) {
         List<String> problems = new ArrayList<>();
         List<Node> certs = certificate.find(Node.ANY, RDF.type.asNode(), Vocab.ResultCertificate).mapWith(Triple::getSubject).toList();
         if ( certs.size() != 1 )
-            return new Report(null, false, false, null, -1, null, -1, 0, List.of("Expected one jip:ResultCertificate, found " + certs.size()));
+            return new Report(null, false, false, null, -1, null, -1, 0, List.of(),
+                              List.of("Expected one jip:ResultCertificate, found " + certs.size()));
         Node cert = certs.get(0);
+        Optional<String> expectedKey = options.expectedKey();
 
-        // 1. Signature
-        DataIntegrityProof.Verification sig = DataIntegrityProof.verify(certificate, cert);
+        // 1. Signature, over the certificate without its timestamps (added after signing)
+        DataIntegrityProof.Verification sig = DataIntegrityProof.verify(CertificateTimestamps.withoutTimestamps(certificate, cert), cert);
         problems.addAll(sig.problems());
         if ( expectedKey.isPresent() && sig.verificationMethod() != null
              && !sig.verificationMethod().startsWith(expectedKey.get() + "#") )
             problems.add("Signed by " + sig.verificationMethod() + ", expected " + expectedKey.get());
 
+        // 1b. RFC 3161 timestamps over the signature
+        List<CertificateTimestamps.Check> timestamps = CertificateTimestamps.verify(certificate, cert, options.tsaTrustAnchors());
+        for ( CertificateTimestamps.Check c : timestamps )
+            c.token().problems().forEach(p -> problems.add("Timestamp" + (c.authority() == null ? "" : " from " + c.authority()) + ": " + p));
+        if ( options.requireTimestamp() && timestamps.stream().noneMatch(c -> c.token().acceptable()) )
+            problems.add(timestamps.isEmpty() ? "No RFC 3161 timestamp, and one is required"
+                                              : "No valid, trusted RFC 3161 timestamp, and one is required");
+
         // 2. Claims
         Node result = object(certificate, cert, Vocab.certifies);
         if ( result == null )
-            return new Report(cert, sig.valid(), false, sig.verificationMethod(), -1, null, -1, 0, add(problems, "No jip:certifies"));
+            return new Report(cert, sig.valid(), false, sig.verificationMethod(), -1, null, -1, 0, timestamps,
+                              add(problems, "No jip:certifies"));
         TreeSet<String> vars = new TreeSet<>();
         certificate.find(result, Vocab.variable, Node.ANY).forEach(t -> vars.add(t.getObject().getLiteralLexicalForm()));
         boolean ordered = "true".equals(lexical(certificate, result, Vocab.ordered));
@@ -154,7 +198,8 @@ public final class CertificateVerifier {
         if ( !digestOk )
             problems.add("Result digest mismatch: certificate " + digest + ", rows " + actual);
 
-        return new Report(cert, sig.valid(), digestOk, sig.verificationMethod(), version, state, count, mine.size(), List.copyOf(problems));
+        return new Report(cert, sig.valid(), digestOk, sig.verificationMethod(), version, state, count, mine.size(), timestamps,
+                          List.copyOf(problems));
     }
 
     /**

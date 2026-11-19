@@ -2,16 +2,21 @@ package xyz.larsw.jip.cli;
 
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.security.cert.TrustAnchor;
 import java.util.Optional;
+import java.util.Set;
 
 import org.apache.jena.sys.JenaSystem;
+import xyz.larsw.jip.cert.CertificateTimestamps;
 import xyz.larsw.jip.cert.CertificateVerifier;
+import xyz.larsw.jip.cert.Rfc3161;
 
 /**
  * Independent verification of a certified SPARQL result.
  *
  * <pre>
  * java -jar jip-verify.jar --results results.srj --cert certificate.ttl [--expect-key did:key:z6Mk...]
+ *                          [--tsa-trust system|none|anchors.pem] [--require-timestamp]
  * </pre>
  *
  * Exit status: 0 valid, 1 invalid, 2 usage or input error. The checks are in
@@ -28,10 +33,12 @@ public final class Verify {
         Path results = null;
         Path cert = null;
         String expectKey = null;
+        String tsaTrust = "system";
+        boolean requireTimestamp = false;
         for ( int i = 0 ; i < args.length ; i++ ) {
             String a = args[i];
             switch (a) {
-                case "--results", "-r", "--cert", "-c", "--expect-key", "-k" -> {
+                case "--results", "-r", "--cert", "-c", "--expect-key", "-k", "--tsa-trust" -> {
                     String value = i + 1 < args.length ? args[i + 1] : null;
                     // A following option is a forgotten value, not a file; write ./-name for a
                     // file whose name starts with '-'.
@@ -42,12 +49,14 @@ public final class Verify {
                         switch (a) {
                             case "--results", "-r" -> results = Path.of(value);
                             case "--cert", "-c" -> cert = Path.of(value);
+                            case "--tsa-trust" -> tsaTrust = value;
                             default -> expectKey = value;
                         }
                     } catch (InvalidPathException ex) {
                         return usageError("Bad file name for " + a + ": " + ex.getMessage());
                     }
                 }
+                case "--require-timestamp" -> requireTimestamp = true;
                 case "--help", "-h" -> { usage(); return 0; }
                 default -> { return usageError("Unknown argument: " + a); }
             }
@@ -58,7 +67,13 @@ public final class Verify {
             return usageError("Missing --cert");
         JenaSystem.init();
         try {
-            CertificateVerifier.Report report = CertificateVerifier.verify(cert, results, Optional.ofNullable(expectKey));
+            Optional<Set<TrustAnchor>> anchors = switch (tsaTrust) {
+                case "system" -> Optional.of(Rfc3161.systemTrustAnchors());
+                case "none" -> Optional.empty();
+                default -> Optional.of(Rfc3161.trustAnchors(Path.of(tsaTrust)));
+            };
+            CertificateVerifier.Options options = new CertificateVerifier.Options(Optional.ofNullable(expectKey), anchors, requireTimestamp);
+            CertificateVerifier.Report report = CertificateVerifier.verify(cert, results, options);
             print(report);
             return report.valid() ? 0 : 1;
         } catch (Exception ex) {
@@ -71,6 +86,17 @@ public final class Verify {
         System.out.println("Certificate     : " + (r.certificate() == null ? "(none)" : r.certificate().getURI()));
         System.out.println("Signed by       : " + r.verificationMethod());
         System.out.println("Signature       : " + (r.signatureValid() ? "OK" : "INVALID"));
+        if ( r.timestamps().isEmpty() )
+            System.out.println("Timestamp       : none");
+        for ( CertificateTimestamps.Check c : r.timestamps() ) {
+            Rfc3161.TokenCheck t = c.token();
+            String trust = t.trusted() == null ? "trust not checked"
+                    : t.trusted() ? "trusted" : "UNTRUSTED: no path to a trust anchor";
+            System.out.println("Timestamp       : " + (t.valid() ? "OK" : "INVALID") + "  " + (t.genTime() == null ? "?" : t.genTime())
+                               + "  (" + trust + ")");
+            System.out.println("  TSA           : " + (t.tsaName() == null ? "?" : t.tsaName())
+                               + (c.authority() == null ? "" : "  via " + c.authority()));
+        }
         System.out.println("Dataset state   : " + (r.datasetState() == null ? "?" : r.datasetState().getURI()) + "  (version "
                            + r.dataVersion() + ")");
         System.out.println("Solutions       : " + r.solutionCount() + " certified, " + r.rowsChecked() + " row(s) carry this certificate");
@@ -88,8 +114,14 @@ public final class Verify {
 
     private static void usage() {
         System.err.println("""
-                Usage: verify --results <results.srj|.srx|.tsv> --cert <certificate.ttl|.jsonld|.nt> [--expect-key did:key:...]
+                Usage: verify --results <results.srj|.srx|.tsv> --cert <certificate.ttl|.jsonld|.nt>
+                              [--expect-key did:key:...] [--tsa-trust system|none|<anchors.pem>] [--require-timestamp]
                   Verifies the eddsa-rdfc-2022 proof of a result certificate and that the rows carrying the
-                  certificate IRI match its RDFC-1.0 digest. Exit: 0 valid, 1 invalid, 2 error.""");
+                  certificate IRI match its RDFC-1.0 digest. RFC 3161 timestamps on the certificate are
+                  checked too; their TSA certificates are chained to the JVM trust store (system, the
+                  default), to the certificates in a PEM file, or not at all (none). An untrusted
+                  timestamp is reported but only fails verification with --require-timestamp, which
+                  demands at least one valid timestamp that is not untrusted.
+                  Exit: 0 valid, 1 invalid, 2 error.""");
     }
 }

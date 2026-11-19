@@ -9,9 +9,16 @@ services:
     volumes:
       # Databases (ds, provenance), the signing key and Fuseki's run area.
       - fuseki-data:/fuseki
-    # To use your own key: mount it and point PROVENANCE_SIGNING_KEY at it.
-    # environment:
-    #   PROVENANCE_SIGNING_KEY: /run/secrets/provenance-key.pem
+    environment:
+      # RFC 3161 timestamp authorities, in priority order: each certificate is co-signed by the
+      # first one that answers. Override with JIP_TSA_URLS; set it to "" to turn timestamps off.
+      PROVENANCE_TSA_URLS: "${JIP_TSA_URLS-http://timestamp.digicert.com http://timestamp.sectigo.com https://freetsa.org/tsr}"
+      # optional: issue the certificate without a timestamp if no TSA answers; required: fail.
+      PROVENANCE_TSA_POLICY: "${JIP_TSA_POLICY:-optional}"
+      # Time allowed per TSA, in milliseconds.
+      PROVENANCE_TSA_TIMEOUT: "${JIP_TSA_TIMEOUT:-5000}"
+      # To use your own key: mount it and point PROVENANCE_SIGNING_KEY at it.
+      # PROVENANCE_SIGNING_KEY: /run/secrets/provenance-key.pem
 
 volumes:
   fuseki-data:

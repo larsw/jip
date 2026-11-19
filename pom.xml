@@ -33,6 +33,9 @@
     <ver.log4j2>2.26.1</ver.log4j2>
     <!-- The version Jena 6.2.0 builds against -->
     <ver.slf4j>2.0.18</ver.slf4j>
+    <!-- RFC 3161 timestamps. Keep in step with the bcprov that jena-fuseki-server bundles
+         (1.84 in Fuseki 6.2.0): the Fuseki module ships bcpkix/bcutil and uses Fuseki's bcprov. -->
+    <ver.bouncycastle>1.84</ver.bouncycastle>
   </properties>
 
   <dependencyManagement>
@@ -61,6 +64,17 @@
         <groupId>com.apicatalog</groupId>
         <artifactId>titanium-rdfc</artifactId>
         <version>${ver.titanium-rdfc}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcpkix-jdk18on</artifactId>
+        <version>${ver.bouncycastle}</version>
+      </dependency>
+      <dependency>
+        <groupId>xyz.larsw</groupId>
+        <artifactId>jip-verifier</artifactId>
+        <version>${project.version}</version>
+        <type>test-jar</type>
       </dependency>
       <dependency>
         <groupId>org.slf4j</groupId>

@@ -159,6 +159,52 @@ reads, or the last committed version outside a transaction. It is an error on a 
 not a jip:VersionedDatasetTDB2."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
+## ---- RFC 3161 timestamps
+
+jip:RFC3161Timestamp
+    a owl:Class ;
+    rdfs:label "RFC 3161 timestamp"@en ;
+    rdfs:comment """A time-stamp token from a time-stamping authority (TSA, RFC 3161) over a
+certificate's signature. The token's message imprint is the SHA-256 hash of the raw signature
+bytes decoded from the proof's sec:proofValue; because the signature covers the certificate,
+the token proves the certificate existed at the TSA's time. Timestamps are added after signing
+and are not part of the signed document: a verifier removes the jip:timestamp links and the
+timestamp nodes' triples before checking the Data Integrity proof."""@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
+jip:timestamp
+    a owl:ObjectProperty ;
+    rdfs:domain jip:ResultCertificate ;
+    rdfs:range jip:RFC3161Timestamp ;
+    rdfs:label "timestamp"@en ;
+    rdfs:comment "Links a certificate to an RFC 3161 timestamp over its signature."@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
+jip:timestampToken
+    a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain jip:RFC3161Timestamp ;
+    rdfs:range xsd:base64Binary ;
+    rdfs:label "timestamp token"@en ;
+    rdfs:comment """The DER-encoded TimeStampToken (a CMS SignedData with a TSTInfo), base64
+encoded. It includes the TSA's certificate. This is the evidence; the other properties of a
+jip:RFC3161Timestamp are informational."""@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
+jip:timestampAuthority
+    a owl:ObjectProperty , owl:FunctionalProperty ;
+    rdfs:domain jip:RFC3161Timestamp ;
+    rdfs:label "timestamp authority"@en ;
+    rdfs:comment "Informational: the URL of the TSA endpoint that issued the token."@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
+jip:timestampTime
+    a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain jip:RFC3161Timestamp ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "timestamp time"@en ;
+    rdfs:comment "Informational: the genTime of the token, copied out of it for queries."@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
 ## ---- SPARQL functions
 
 jip:tdbDataVersion
@@ -207,6 +253,32 @@ jip:maxSolutions
     rdfs:comment """Context symbol, set in the Fuseki server's ja:context: the largest number of
 solutions one call of the certify SERVICE accepts (default 10000). A larger result fails the
 query; it is never truncated."""@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
+jip:timestampAuthorities
+    a rdfs:Resource ;
+    rdfs:label "timestamp authorities"@en ;
+    rdfs:comment """Context symbol, set in the Fuseki server's ja:context: the URLs of RFC 3161
+time-stamping authorities, in priority order, separated by whitespace or commas. When set, every
+certificate gets a timestamp from the first authority that answers; an authority that fails is
+tried last for the next 60 seconds. The environment variable PROVENANCE_TSA_URLS overrides it
+(an empty value turns timestamps off)."""@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
+jip:timestampPolicy
+    a rdfs:Resource ;
+    rdfs:label "timestamp policy"@en ;
+    rdfs:comment """Context symbol, set in the Fuseki server's ja:context: "optional" (default)
+issues a certificate without a timestamp when no authority answers; "required" fails the
+certification instead. The environment variable PROVENANCE_TSA_POLICY overrides it."""@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
+jip:timestampTimeout
+    a rdfs:Resource ;
+    rdfs:label "timestamp timeout"@en ;
+    rdfs:comment """Context symbol, set in the Fuseki server's ja:context: the time allowed for
+each authority, in milliseconds (default 5000). The environment variable PROVENANCE_TSA_TIMEOUT
+overrides it."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:dataVersionComponent

@@ -61,6 +61,13 @@ public final class Vocab {
     public static final Node queryText = uri(NS, "queryText");
     public static final Node dataVersion = uri(NS, "dataVersion");
 
+    // jip: RFC 3161 timestamps (outside the signed document; see CertificateTimestamps)
+    public static final Node RFC3161Timestamp = uri(NS, "RFC3161Timestamp");
+    public static final Node timestamp = uri(NS, "timestamp");
+    public static final Node timestampToken = uri(NS, "timestampToken");
+    public static final Node timestampAuthority = uri(NS, "timestampAuthority");
+    public static final Node timestampTime = uri(NS, "timestampTime");
+
     /** The RDFC-1.0 specification, identifying the canonicalization algorithm. */
     public static final Node RDFC_1_0 = NodeFactory.createURI("https://www.w3.org/TR/rdf-canon/");
 

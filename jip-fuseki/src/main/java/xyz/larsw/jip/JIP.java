@@ -37,6 +37,12 @@ public final class JIP {
     public static final Symbol symCertificateStore = Symbol.create(NS + "certificateStore");
     /** Server context: maximum number of solutions a certified SERVICE may return. */
     public static final Symbol symMaxSolutions = Symbol.create(NS + "maxSolutions");
+    /** Server context: RFC 3161 TSA URLs in priority order (whitespace or comma separated). */
+    public static final Symbol symTimestampAuthorities = Symbol.create(NS + "timestampAuthorities");
+    /** Server context: {@code optional} (default) or {@code required}. */
+    public static final Symbol symTimestampPolicy = Symbol.create(NS + "timestampPolicy");
+    /** Server context: per-TSA request timeout in milliseconds (default 5000). */
+    public static final Symbol symTimestampTimeout = Symbol.create(NS + "timestampTimeout");
 
     // ---- SPARQL functions
 

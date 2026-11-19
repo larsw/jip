@@ -168,6 +168,54 @@ Only the digest of the rows is stored, never the rows themselves.
 - **Test:** the vc-di-eddsa test vectors (fixed key, canonical forms, expected
   `proofValue`).
 
+### Timestamps (RFC 3161)
+
+Optional. Added after the design review above; it replaces the earlier "trusted timestamping
+is out of scope" risk.
+
+- **What is timestamped.** The TSA's message imprint is `SHA-256(signature)`, where
+  `signature` is the raw Ed25519 signature decoded from `sec:proofValue`. The signature covers
+  the whole certificate, so the token does too, and the Data Integrity proof is unchanged. This
+  is the construction of a CAdES signature time-stamp. It proves the certificate existed at the
+  TSA's `genTime`; it does not make the server's own `prov:*Time` values trustworthy.
+- **Where the token goes.** After signing, in the same certificate graph:
+  ```turtle
+  <urn:uuid:C> jip:timestamp _:t .
+  _:t a jip:RFC3161Timestamp ;
+      jip:timestampToken "…DER TimeStampToken, base64…"^^xsd:base64Binary ;
+      jip:timestampAuthority <http://timestamp.digicert.com> ;   # informational
+      jip:timestampTime "…"^^xsd:dateTime .                        # informational, = genTime
+  ```
+  These triples are not part of the signed document. The verifier removes the `jip:timestamp`
+  links and the timestamp nodes' triples before checking the proof, so timestamps can be added
+  (or several attached) without re-signing. Stripping cannot hide tampering: removing any
+  signed triple makes the proof fail.
+- **Requests.** SHA-256 imprint, a random 64-bit nonce, `certReq` true (so the token carries the
+  TSA certificate and verifies offline). The reply must be granted and match the request
+  (imprint, nonce), and the token must verify before it is stored.
+- **Priority list and fallback.** `jip:timestampAuthorities` lists TSA URLs in priority order.
+  They are tried one at a time, each with `jip:timestampTimeout` (default 5 s); the first valid
+  token wins. A TSA that fails is moved to the end of the list for 60 s, so a TSA that is down
+  costs one timeout per minute rather than one per certificate. It is still tried if all the
+  others fail too.
+- **Policy.** `jip:timestampPolicy` `optional` (default) issues the certificate without a
+  timestamp if no TSA answers, and logs a warning. `required` fails the certification
+  (HTTP 500, or the incoming row with `SERVICE SILENT`).
+- **Configuration.** Server `ja:context`, with environment overrides `PROVENANCE_TSA_URLS`,
+  `PROVENANCE_TSA_POLICY` and `PROVENANCE_TSA_TIMEOUT`. A set but empty `PROVENANCE_TSA_URLS`
+  turns timestamps off even if the config file names TSAs. Not configured means no timestamps,
+  and certificates are exactly as before.
+- **Verification.** For each token: the imprint must equal SHA-256 of the proof's signature; the
+  CMS signature must verify with the TSA certificate in the token; that certificate must be a
+  time-stamping certificate (critical EKU `id-kp-timeStamping` only) valid at `genTime`. Then
+  the TSA certificate is chained (PKIX, at `genTime`, no revocation check) to the trust anchors:
+  the JVM trust store by default, a PEM file, or not at all. A broken token makes the report
+  invalid. An untrusted one is reported but does not, unless a timestamp is required
+  (`--require-timestamp`, `Options.requireTimestamp`), which demands at least one valid token
+  that is not untrusted.
+- **Library.** BouncyCastle (`bcpkix`) for the Time-Stamp Protocol and CMS. The JDK has no
+  public API for either.
+
 ### Signing key
 
 - The key is an Ed25519 PKCS#8 PEM. Its path comes from `PROVENANCE_SIGNING_KEY`
@@ -196,8 +244,9 @@ Verification lives in the `jip-verifier` library (`CertificateVerifier`), which 
 arguments, calls the library and prints the report. Together they work as follows:
 
 1. It takes `--results r.srj` (SPARQL JSON), `--cert c.ttl` and optionally
-   `--expect-key did:key:…`.
-2. It checks the proof against the `did:key`.
+   `--expect-key did:key:…`, `--tsa-trust system|none|anchors.pem` and `--require-timestamp`.
+2. It checks the proof against the `did:key`, over the certificate without its timestamps, and
+   then any RFC 3161 timestamps (see "Timestamps" above).
 3. It selects the rows whose value is the certificate IRI and rebuilds the `rs:`
    encoding from the certified variables, adding `rs:index` only when the
    certificate says the result is ordered.
@@ -214,14 +263,15 @@ counter persisted.
   the package `xyz.larsw.jip`:
   - `jip-verifier`: canonicalization, the `rs:` encoding, Data Integrity proofs
     (`DataIntegrityProof`, signing through the `ProofSigner` interface), `did:key`
-    (`DidKey`), the certificate vocabulary (`Vocab`, which also holds the namespace) and
-    `CertificateVerifier`. It depends on `jena-arq` and titanium-rdfc only.
+    (`DidKey`), the certificate vocabulary (`Vocab`, which also holds the namespace), RFC 3161
+    tokens (`Rfc3161`, `CertificateTimestamps`) and `CertificateVerifier`. It depends on
+    `jena-arq`, titanium-rdfc and BouncyCastle (`bcpkix`).
   - `jip-verifier-cli`: the `Verify` command, shaded with all its dependencies into
     `jip-verify.jar`.
   - `jena-intrinsic-provenance` (directory `jip-fuseki`): the data version, the certify
-    SERVICE, the certificate store, `SigningKey` (a `ProofSigner`) and the Fuseki
-    module. Jena is `provided`; `jip-verifier` and titanium-rdfc are shaded into the jar,
-    so Fuseki still loads one jar.
+    SERVICE, the certificate store, `SigningKey` (a `ProofSigner`), the TSA client
+    (`TimestampAuthorities`) and the Fuseki module. Jena is `provided`; `jip-verifier`,
+    titanium-rdfc, `bcpkix` and `bcutil` are shaded into the jar, so Fuseki still loads one jar.
 - **Registration:** a `JenaSubsystemLifecycle` registers the assembler, the
   functions and the service executor. A `FusekiAutoModule` adds the `/$/provenance/*`
   servlets and the header filter.
@@ -234,8 +284,11 @@ counter persisted.
 
 - Anyone who can query can create certificates, and each one is a write to the
   provenance store. That can be abused to make the server do a lot of writes.
-- Timestamps come from the server clock. Trusted timestamping (RFC 3161) is out
-  of scope.
+- The times inside a certificate come from the server clock. An RFC 3161 timestamp, when
+  configured, proves when the certificate was signed, but not those values. TSA certificates
+  are not checked for revocation.
+- A timestamped certificate costs one outgoing HTTP request while the query runs, and public
+  TSAs rate-limit.
 - If one request touches several versioned datasets, the headers report the last
   one that was observed.
 
@@ -266,3 +319,8 @@ These are the places where building the PoC refined the plan above.
   because the Fuseki jar already bundles other versions of `com.apicatalog.rdf.*`. The
   verifier library declares it as an ordinary dependency and leaves shading to whoever
   embeds it.
+- **BouncyCastle.** `jena-fuseki-server-6.2.0.jar` bundles `bcprov` 1.84 unrelocated (through
+  Shiro), but not `bcpkix`/`bcutil`. The module jar shades those two, also unrelocated, at the
+  same version (`ver.bouncycastle`), so they link against Fuseki's `bcprov`; none of their
+  classes overlap with the server jar. Keep the version in step when moving to another Fuseki.
+  BouncyCastle is used only through its lightweight API; no JCE provider is registered.

@@ -3,6 +3,7 @@ package xyz.larsw.jip.service;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -36,8 +37,10 @@ import xyz.larsw.jip.JIP;
 import xyz.larsw.jip.canon.ResultSetEncoding;
 import xyz.larsw.jip.cert.CertificateBuilder;
 import xyz.larsw.jip.cert.CertificateStore;
+import xyz.larsw.jip.cert.CertificateTimestamps;
 import xyz.larsw.jip.cert.ProvenanceKeys;
 import xyz.larsw.jip.cert.SigningKey;
+import xyz.larsw.jip.cert.TimestampAuthorities;
 import xyz.larsw.jip.version.DataVersion;
 import xyz.larsw.jip.version.DataVersionComponent;
 import org.slf4j.Logger;
@@ -51,7 +54,8 @@ import org.slf4j.LoggerFactory;
  * transaction (the query's own, or a new one if there is none).</li>
  * <li>Materialize the solutions (at most {@code jip:maxSolutions}, default 10,000).</li>
  * <li>Digest: SHA-256 of the RDFC-1.0 canonical {@code rs:} encoding.</li>
- * <li>Build and sign the PROV-O certificate; store it in the certificate store.</li>
+ * <li>Build and sign the PROV-O certificate; if TSAs are configured, attach an RFC 3161
+ * timestamp over the signature; store it in the certificate store.</li>
  * <li>Return the rows (merged with the incoming binding) with the certificate variable bound.</li>
  * </ol>
  */
@@ -133,6 +137,7 @@ public class CertifyServiceExecutor implements ChainingServiceExecutor {
                 variables, ordered, eval.rows().size(), digest,
                 patternText(inner), queryText(context), started, ended);
         Graph certificate = CertificateBuilder.buildSigned(input, key, agentLabel());
+        timestamp(certificate, certNode, context);
         CertificateStore.fromContext(context).store(certNode, certificate);
         LOG.info("Certified {} solution(s) at database {} v{} -> {}", eval.rows().size(), dataVersion.databaseId(),
                  eval.version(), certNode.getURI());
@@ -148,6 +153,30 @@ public class CertifyServiceExecutor implements ChainingServiceExecutor {
             }
         }
         return QueryIterPlainWrapper.create(out.iterator(), execCxt);
+    }
+
+    /**
+     * Have a TSA co-sign the certificate's signature, if timestamp authorities are configured.
+     * With the {@code required} policy, no token means no certificate.
+     */
+    private static void timestamp(Graph certificate, Node certNode, Context context) {
+        Optional<TimestampAuthorities> tsa;
+        try {
+            tsa = TimestampAuthorities.fromContext(context);
+        } catch (IllegalArgumentException ex) {
+            throw new QueryExecException("Bad timestamp configuration: " + ex.getMessage(), ex);
+        }
+        if ( tsa.isEmpty() )
+            return;
+        Optional<TimestampAuthorities.Stamp> stamp = tsa.get().stamp(CertificateTimestamps.messageImprint(certificate, certNode));
+        if ( stamp.isPresent() ) {
+            CertificateTimestamps.attach(certificate, certNode, stamp.get().token(), stamp.get().authority().toString());
+            return;
+        }
+        if ( tsa.get().policy() == TimestampAuthorities.Policy.REQUIRED )
+            throw new QueryExecException("No timestamp authority answered " + tsa.get().authorities()
+                                         + " and a timestamp is required (" + JIP.symTimestampPolicy.getSymbol() + ")");
+        LOG.warn("Certificate {} issued without an RFC 3161 timestamp", certNode.getURI());
     }
 
     /** Parent + the row's named visible variables + the certificate; null if incompatible. */

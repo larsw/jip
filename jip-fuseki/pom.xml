@@ -47,6 +47,19 @@
       <artifactId>jena-fuseki-main</artifactId>
       <scope>provided</scope>
     </dependency>
+    <!-- Fuseki's server jar already bundles bcprov (unrelocated); only bcpkix and bcutil are
+         shaded in, also unrelocated, so they link against that bcprov. -->
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcpkix-jdk18on</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>xyz.larsw</groupId>
+      <artifactId>jip-verifier</artifactId>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -69,6 +82,8 @@
                   <include>com.apicatalog:titanium-rdfc</include>
                   <include>com.apicatalog:titanium-rdf-api</include>
                   <include>com.apicatalog:titanium-rdf-n-quads</include>
+                  <include>org.bouncycastle:bcpkix-jdk18on</include>
+                  <include>org.bouncycastle:bcutil-jdk18on</include>
                 </includes>
               </artifactSet>
               <relocations>
@@ -84,6 +99,18 @@
                   <excludes>
                     <exclude>module-info.class</exclude>
                     <exclude>META-INF/versions/*/module-info.class</exclude>
+                    <exclude>META-INF/MANIFEST.MF</exclude>
+                  </excludes>
+                </filter>
+                <filter>
+                  <!-- Signed jars: the signatures do not survive shading -->
+                  <artifact>org.bouncycastle:*</artifact>
+                  <excludes>
+                    <exclude>module-info.class</exclude>
+                    <exclude>META-INF/versions/*/module-info.class</exclude>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
                     <exclude>META-INF/MANIFEST.MF</exclude>
                   </excludes>
                 </filter>

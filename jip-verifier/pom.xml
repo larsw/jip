@@ -16,8 +16,8 @@
   <name>Jena intrinsic provenance: verifier library</name>
   <description>
     Offline verification of jip result certificates: RDFC-1.0 canonicalization, the rs: result
-    encoding, eddsa-rdfc-2022 Data Integrity proofs and Ed25519 did:key. Needs only jena-arq;
-    no TDB2 or Fuseki.
+    encoding, eddsa-rdfc-2022 Data Integrity proofs, Ed25519 did:key and RFC 3161 timestamp
+    tokens. Needs jena-arq, titanium-rdfc and BouncyCastle; no TDB2 or Fuseki.
   </description>
 
   <dependencies>
@@ -31,5 +31,27 @@
       <groupId>com.apicatalog</groupId>
       <artifactId>titanium-rdfc</artifactId>
     </dependency>
+    <!-- RFC 3161 time-stamp protocol: requests, replies and token (CMS) verification -->
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcpkix-jdk18on</artifactId>
+    </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <!-- The test TSA (TestTsa) is reused by the Fuseki module's tests. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>test-jar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>

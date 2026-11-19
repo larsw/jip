@@ -1,12 +1,30 @@
 #!/usr/bin/env bash
 # End-to-end demo of jena-intrinsic-provenance against the Docker image.
 #
-#   scripts/demo.sh [--reset]
+#   scripts/demo.sh [--reset] [--tsa "<url> [<url>...]"] [--no-tsa]
 #
-#   --reset   delete the demo's Docker volume first (databases, signing key)
+#   --reset    delete the demo's Docker volume first (databases, signing key)
+#   --tsa      RFC 3161 timestamp authorities, in priority order (default: $TSA_DEFAULT,
+#              or $JIP_TSA_URLS if set)
+#   --no-tsa   issue certificates without timestamps
 #
 # Needs: docker (compose v2), curl, jq. Writes files to ./demo-out.
 set -euo pipefail
+
+TSA_DEFAULT="http://timestamp.digicert.com http://timestamp.sectigo.com https://freetsa.org/tsr"
+TSA_URLS="${JIP_TSA_URLS-$TSA_DEFAULT}"
+RESET=
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --reset) RESET=1 ;;
+    --tsa) [[ $# -ge 2 ]] || { echo "--tsa needs a value" >&2; exit 2; }; TSA_URLS="$2"; shift ;;
+    --no-tsa) TSA_URLS="" ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+# docker-compose.yml passes this to the server as PROVENANCE_TSA_URLS.
+export JIP_TSA_URLS="$TSA_URLS"
 
 cd "$(dirname "$0")/.."
 BASE=http://localhost:3030
@@ -50,6 +68,11 @@ certificate() {
   curl -fsS -H 'Accept: text/turtle' "$BASE/\$/provenance/certificate/${1#urn:uuid:}" -o "$OUT/$2"
 }
 
+# show <file>: print a certificate, eliding the long base64 timestamp token
+show() {
+  sed -E 's/"([A-Za-z0-9+\/=]{48})[A-Za-z0-9+\/=]{16,}"/"\1..."/' "$1" | sed 's/^/   /'
+}
+
 PREFIXES='PREFIX ex: <http://example.org/>
 PREFIX jip: <https://larsw.xyz/jip/>'
 CERTIFIED_QUERY="$PREFIXES
@@ -60,7 +83,7 @@ SELECT ?name ?email ?cert WHERE {
 }"
 
 # ---------------------------------------------------------------------------
-if [[ "${1:-}" == "--reset" ]]; then
+if [[ -n "$RESET" ]]; then
   bold "Reset: removing the demo volume"
   docker compose down -v
 fi
@@ -72,6 +95,11 @@ DID=$(curl -fsS "$BASE/\$/provenance/key" | jq -r .id)
 info "signing key: $DID"
 V0=$(curl -fsS "$BASE/\$/provenance/version/ds" | jq -r .version)
 info "persistent data version of /ds: $V0"
+if [[ -n "$TSA_URLS" ]]; then
+  info "timestamp authorities (priority order): $TSA_URLS"
+else
+  info "timestamp authorities: none (certificates are not timestamped)"
+fi
 
 bold "1. Load data (Graph Store Protocol): a committed write bumps the version"
 curl -fsS -D "$OUT/load.headers" -o /dev/null -H 'Content-Type: text/turtle' --data-binary @- "$BASE/ds/data?default" <<'EOF'
@@ -92,9 +120,11 @@ CERT=$(jq -r '.results.bindings[0].cert.value' "$OUT/results.srj")
 
 bold "3. The certificate ($CERT)"
 certificate "$CERT" certificate.ttl
-sed 's/^/   /' "$OUT/certificate.ttl"
+show "$OUT/certificate.ttl"
 
 bold "4. Independent verification (separate container, nothing from the server but the files)"
+info "Checks the signature, the result digest and any RFC 3161 timestamp; the TSA certificate"
+info "is chained to the JVM trust store (--tsa-trust system, the default)."
 verify results.srj certificate.ttl
 
 bold "5. Tamper with the results: change Alice's email"
@@ -140,15 +170,31 @@ bold "10. Certificates are queryable (PROV-O) at /provenance"
 curl -fsS -H 'Accept: application/sparql-results+json' --data-urlencode query@- "$BASE/provenance/sparql" <<'EOF' |
 PREFIX prov: <http://www.w3.org/ns/prov#>
 PREFIX jip:  <https://larsw.xyz/jip/>
-SELECT ?cert ?version ?solutions ?ended WHERE {
+SELECT ?cert ?version ?solutions ?ended ?tsa WHERE {
   GRAPH ?cert {
     ?cert jip:certifies ?r .
     ?r prov:wasDerivedFrom ?state ; jip:solutionCount ?solutions ; prov:wasGeneratedBy ?exec .
     ?state jip:dataVersion ?version .
     ?exec prov:endedAtTime ?ended .
+    OPTIONAL { ?cert jip:timestamp/jip:timestampAuthority ?tsa }
   }
 } ORDER BY ?ended
 EOF
-  jq -r '.results.bindings[] | "   v\(.version.value)\t\(.solutions.value) solution(s)\t\(.cert.value)"'
+  jq -r '.results.bindings[] | "   v\(.version.value)\t\(.solutions.value) solution(s)\t\(.cert.value)\t\(.tsa.value // "no timestamp")"'
+
+if [[ -n "$TSA_URLS" ]]; then
+  bold "11. Timestamp fallback: put an unreachable TSA first in the list"
+  DEAD_TSA=http://127.0.0.1:9/tsr
+  JIP_TSA_URLS="$DEAD_TSA $TSA_URLS" docker compose --progress quiet up -d
+  wait_ready
+  info "priority list is now: $DEAD_TSA $TSA_URLS"
+  query "$CERTIFIED_QUERY" "$OUT/results-fallback.srj" "$OUT/query-fallback.headers"
+  CERT4=$(jq -r '.results.bindings[0].cert.value' "$OUT/results-fallback.srj")
+  certificate "$CERT4" certificate-fallback.ttl
+  verify results-fallback.srj certificate-fallback.ttl
+  docker compose logs --no-log-prefix fuseki 2>/dev/null | grep -E 'Timestamp authority .* failed|fallback authority' | tail -2 \
+    | sed -e $'s/\x1b\\[[0-9;]*[A-Za-z]//g' -e 's/^/   log: /' || true
+  info "(the next run of this script restores the normal list)"
+fi
 
 bold "Done. Files are in $OUT"

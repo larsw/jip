@@ -2,6 +2,9 @@ package xyz.larsw.jip.service;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.net.ServerSocket;
+import java.net.URI;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -29,7 +32,10 @@ import xyz.larsw.jip.JIP;
 import xyz.larsw.jip.cert.CertificateStore;
 import xyz.larsw.jip.cert.CertificateVerifier;
 import xyz.larsw.jip.cert.ProvenanceKeys;
+import xyz.larsw.jip.cert.Rfc3161;
 import xyz.larsw.jip.cert.SigningKey;
+import xyz.larsw.jip.cert.TestTsa;
+import xyz.larsw.jip.cert.TimestampAuthorities;
 import xyz.larsw.jip.cert.Vocab;
 import xyz.larsw.jip.version.DataVersion;
 import xyz.larsw.jip.TestLib;
@@ -234,6 +240,54 @@ class CertifyServiceTest {
         assertTrue(verify(inside, certs(inside, "cert").iterator().next()).valid());
         Result outside = query(dsg, ORDERED_QUERY);
         assertTrue(verify(outside, certs(outside, "cert").iterator().next()).valid());
+    }
+
+    @Test
+    void certificateIsTimestampedWhenAuthoritiesAreConfigured() throws Exception {
+        try ( TestTsa tsa = new TestTsa() ) {
+            URI url = tsa.start();
+            TimestampAuthorities authorities = TimestampAuthorities.of(List.of(url), TimestampAuthorities.Policy.REQUIRED, Duration.ofSeconds(5));
+            Result r = query(dsg, ORDERED_QUERY, JIP.symTimestampAuthorities, authorities);
+            Node cert = certs(r, "cert").iterator().next();
+            Graph g = store.get(cert).orElseThrow();
+            assertTrue(g.contains(cert, Vocab.timestamp, Node.ANY));
+            assertTrue(g.contains(Node.ANY, Vocab.timestampAuthority, NodeFactory.createURI(url.toString())));
+
+            CertificateVerifier.Options trusting = new CertificateVerifier.Options(Optional.of(key.didKey()), Optional.of(tsa.anchors()), true);
+            CertificateVerifier.Report report = CertificateVerifier.verify(g, r.vars(), r.rows(), trusting);
+            assertTrue(report.valid(), () -> report.problems().toString());
+            assertEquals(1, report.timestamps().size());
+            assertEquals(Boolean.TRUE, report.timestamps().get(0).token().trusted());
+
+            // The JVM trust store doesn't know the test CA: reported, but only fatal when required.
+            CertificateVerifier.Report system = verify(r, cert);
+            assertTrue(system.valid(), () -> system.problems().toString());
+            assertEquals(Boolean.FALSE, system.timestamps().get(0).token().trusted());
+            CertificateVerifier.Report systemRequired = CertificateVerifier.verify(g, r.vars(), r.rows(),
+                    new CertificateVerifier.Options(Optional.of(key.didKey()), Optional.of(Rfc3161.systemTrustAnchors()), true));
+            assertFalse(systemRequired.valid());
+        }
+    }
+
+    @Test
+    void timestampPolicyDecidesWhenNoAuthorityAnswers() throws Exception {
+        URI dead;
+        try ( ServerSocket s = new ServerSocket(0) ) {
+            dead = URI.create("http://127.0.0.1:" + s.getLocalPort() + "/tsa");
+        }
+        TimestampAuthorities required = TimestampAuthorities.of(List.of(dead), TimestampAuthorities.Policy.REQUIRED, Duration.ofSeconds(2));
+        QueryExecException ex = assertThrows(QueryExecException.class, () -> query(dsg, ORDERED_QUERY, JIP.symTimestampAuthorities, required));
+        assertTrue(ex.getMessage().contains("timestamp is required"), ex.getMessage());
+
+        TimestampAuthorities optional = TimestampAuthorities.of(List.of(dead), TimestampAuthorities.Policy.OPTIONAL, Duration.ofSeconds(2));
+        Result r = query(dsg, ORDERED_QUERY, JIP.symTimestampAuthorities, optional);
+        Node cert = certs(r, "cert").iterator().next();
+        CertificateVerifier.Report report = verify(r, cert);
+        assertTrue(report.valid(), "certificate without a timestamp is still valid");
+        assertTrue(report.timestamps().isEmpty());
+        CertificateVerifier.Report requiring = CertificateVerifier.verify(store.get(cert).orElseThrow(), r.vars(), r.rows(),
+                new CertificateVerifier.Options(Optional.of(key.didKey()), Optional.empty(), true));
+        assertFalse(requiring.valid(), "verifier asked to require a timestamp");
     }
 
     @Test
