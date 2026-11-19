@@ -4,7 +4,7 @@
 # `p11-kit server` exposes the token on a Unix socket. The Fuseki container loads only
 # p11-kit-client.so, which forwards every PKCS#11 call over that socket, so the private key
 # never enters the Fuseki process. In production, replace SoftHSM2 with an HSM's PKCS#11 module.
-#   docker build -f docker/signer/Dockerfile -t jip-signer:0.13.0 .
+#   docker build -f docker/signer/Dockerfile -t jip-signer:0.14.0 .
 # Same Ubuntu release as the Fuseki runtime image (eclipse-temurin:21-jre-noble): the p11-kit
 # server here and p11-kit-client.so there must be the same p11-kit version.
 FROM ubuntu:24.04
