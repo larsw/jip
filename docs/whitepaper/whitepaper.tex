@@ -113,7 +113,7 @@
 \title{\sffamily\bfseries\color{accent}Intrinsic Provenance for Apache Jena\\[0.4em]
   \Large\mdseries\color{black}A Persistent Data Version for TDB2 and\\Signed Attestations for SPARQL Results}
 \author{\large Lars Wilhelmsen\\[0.2em]\normalsize\href{mailto:lars@sral.org}{\texttt{lars@sral.org}}}
-\date{\normalsize Proof-of-concept report, jena-intrinsic-provenance 0.16.0-SNAPSHOT\\[0.2em]November 2026}
+\date{\normalsize Proof-of-concept report, jena-intrinsic-provenance 0.16.0\\[0.2em]November 2026}
 
 \begin{document}
 
@@ -847,25 +847,25 @@ execution is also associated with the requester, in the role \code{jip:requester
 
 \needspace{10\baselineskip}
 \begin{lstlisting}[language=Turtle, caption={An attestation from the demo, with prefixes added and long literals shortened.}, label={lst:attestation}]
-PREFIX c:   <urn:uuid:c4d56f2d-56e9-48e3-a2e8-2b2b36c44d8e#>
-PREFIX db:  <urn:uuid:1c734d07-be93-4361-9e19-b9741842893c#>
-PREFIX key: <did:key:zDnaexph6yftYxCakoeNb24rUSBVtDphR8DXR9dVqCB8PoTeQ#>
+PREFIX c:   <urn:uuid:cdd15485-9ab6-40a8-9993-7827c00606d3#>
+PREFIX db:  <urn:uuid:69fd58e1-ed99-470f-b95f-426569c251ea#>
+PREFIX key: <did:key:zDnaevMM9EKy1i19P8jPV7bhmE3Q4dYZRia1RtP6sEqYNL8oz#>
 
-<urn:uuid:c4d56f2d-56e9-48e3-a2e8-2b2b36c44d8e>
+<urn:uuid:cdd15485-9ab6-40a8-9993-7827c00606d3>
     a jip:ResultAttestation, prov:Entity ;
     jip:attests c:result ;
     sec:proof [
         a sec:DataIntegrityProof ;
         sec:cryptosuite "ecdsa-rdfc-2019"^^sec:cryptosuiteString ;
-        sec:verificationMethod key:zDnaexph6yftYxCakoeNb24rUSBVtDphR8DXR9dVqCB8PoTeQ ;
+        sec:verificationMethod key:zDnaevMM9EKy1i19P8jPV7bhmE3Q4dYZRia1RtP6sEqYNL8oz ;
         sec:proofPurpose sec:assertionMethod ;
-        dcterms:created "2026-11-19T16:18:59Z"^^xsd:dateTime ;
-        sec:proofValue "z2FvrsiEUhA4...SSvMeKh8"^^sec:multibase ] ;
+        dcterms:created "2026-11-19T16:31:40Z"^^xsd:dateTime ;
+        sec:proofValue "z2zG41vUXXhb...LFi2RNw9"^^sec:multibase ] ;
     jip:timestamp [
         a jip:RFC3161Timestamp ;
         jip:timestampToken "MIIXaQYJKoZIhvcNAQcCoIIXWjCC..."^^xsd:base64Binary ;
         jip:timestampAuthority <http://timestamp.digicert.com> ;
-        jip:timestampTime "2026-11-19T16:19:00Z"^^xsd:dateTime ] .
+        jip:timestampTime "2026-11-19T16:31:41Z"^^xsd:dateTime ] .
 
 c:result a jip:SolutionSequence, prov:Entity ;
     prov:wasGeneratedBy c:exec ;
@@ -879,12 +879,12 @@ c:result a jip:SolutionSequence, prov:Entity ;
 
 c:exec a jip:QueryExecution, prov:Activity ;
     prov:used db:v1 ;
-    prov:wasAssociatedWith <did:key:zDnaexph6yftYxCakoeNb24rUSBVtDphR8DXR9dVqCB8PoTeQ> ;
+    prov:wasAssociatedWith <did:key:zDnaevMM9EKy1i19P8jPV7bhmE3Q4dYZRia1RtP6sEqYNL8oz> ;
     prov:wasAssociatedWith c:requester ;
     prov:qualifiedAssociation [ a prov:Association ;
         prov:agent c:requester ; prov:hadRole jip:requester ] ;
-    prov:startedAtTime "2026-11-19T16:18:59.803855778Z"^^xsd:dateTime ;
-    prov:endedAtTime   "2026-11-19T16:18:59.827782725Z"^^xsd:dateTime ;
+    prov:startedAtTime "2026-11-19T16:31:40.939694267Z"^^xsd:dateTime ;
+    prov:endedAtTime   "2026-11-19T16:31:40.959000657Z"^^xsd:dateTime ;
     jip:servicePattern "SELECT ?name ?email WHERE { ... } ORDER BY ?name" ;
     jip:queryText "PREFIX jip: <https://larsw.xyz/jip/> ..." .
 
@@ -892,9 +892,9 @@ db:v1 a jip:DatasetState, prov:Entity ;
     jip:dataVersion 1 ;
     prov:specializationOf <https://example.org/datasets/ds> .
 
-<did:key:zDnaexph6yftYxCakoeNb24rUSBVtDphR8DXR9dVqCB8PoTeQ>
+<did:key:zDnaevMM9EKy1i19P8jPV7bhmE3Q4dYZRia1RtP6sEqYNL8oz>
     a prov:SoftwareAgent ;
-    rdfs:label "jena-intrinsic-provenance 0.15.0 on Apache Jena 6.2.0" .
+    rdfs:label "jena-intrinsic-provenance 0.16.0 on Apache Jena 6.2.0" .
 
 c:requester a prov:Agent ;
     jip:principal "alice" ;
@@ -983,7 +983,7 @@ The token is added after signing, as a node of its own:
 _:t a jip:RFC3161Timestamp ;
     jip:timestampToken "MIIXaQYJKoZIhvcNAQcCoIIXWjCC..."^^xsd:base64Binary ;
     jip:timestampAuthority <http://timestamp.digicert.com> ;
-    jip:timestampTime "2026-11-19T16:19:00Z"^^xsd:dateTime .
+    jip:timestampTime "2026-11-19T16:31:41Z"^^xsd:dateTime .
 \end{lstlisting}
 Only the token is evidence. The authority and the time are copies for queries over the
 attestation store; the verifier reports what the token says. The timestamp triples are not part
@@ -1022,8 +1022,8 @@ HTTP/1.1 202 Accepted
 Retry-After: 1
 Content-Type: application/json
 
-{"attestation":"urn:uuid:c4d56f2d-56e9-48e3-a2e8-2b2b36c44d8e","status":"timestamp-pending",
- "pendingSince":"2026-11-19T16:18:59.834452364Z","retryAfter":1}
+{"attestation":"urn:uuid:cdd15485-9ab6-40a8-9993-7827c00606d3","status":"timestamp-pending",
+ "pendingSince":"2026-11-19T16:31:40.965237224Z","retryAfter":1}
 \end{lstlisting}
 
 The policy (\code{jip:timestampPolicy}) decides what happens when no TSA answers. With
@@ -1156,9 +1156,26 @@ the key's place in the history: \code{did}, \code{status} (\code{current} or \co
 \code{activated} (the latest activation), and for a retired key \code{retired}, the time the
 next key was activated. Example~\ref{lst:keys} shows the set after the demo's rollover.
 
-\needspace{20\baselineskip}
+\needspace{22\baselineskip}
 \begin{lstlisting}[basicstyle=\ttfamily\footnotesize, caption={The JWK Set returned by \code{GET /\$/provenance/keys} after the rollover in the demo (key identifiers shortened).}, label={lst:keys}]
-KEYS-LISTING
+{ "keys": [
+  { "kty": "EC", "crv": "P-256",
+    "x": "rMPSGsf0zd39WJGGiDOPpmhRl4mS9-54A4dxbnbW4SU",
+    "y": "WWXnBpFL3dkRHd0_WZUvzvVBi6YFJL2OP1k9Uaa5gdA",
+    "kid": "did:key:zDnaec...umfi#zDnaec...umfi",
+    "alg": "ES256", "use": "sig",
+    "did": "did:key:zDnaec...umfi",
+    "status": "current",
+    "activated": "2026-11-19T16:31:59.485371796Z" },
+  { "kty": "EC", "crv": "P-256",
+    "x": "vI-wOOeqFwu5gB9dhWDxc7BLRTMFZGTEyHXvV-I3oMk",
+    "y": "1UhxV5CqvZu1X_EQxco98XZD3cIIRIeSvpXXQgQmTGE",
+    "kid": "did:key:zDnaev...L8oz#zDnaev...L8oz",
+    "alg": "ES256", "use": "sig",
+    "did": "did:key:zDnaev...L8oz",
+    "status": "retired",
+    "activated": "2026-11-19T16:31:39.739495881Z",
+    "retired": "2026-11-19T16:31:59.485371796Z" } ] }
 \end{lstlisting}
 
 The verifier's \code{-{}-trusted-keys} option reads such a set, saved through a channel the
@@ -1220,20 +1237,20 @@ results with one email address changed.
 
 \needspace{19\baselineskip}
 \begin{lstlisting}[basicstyle=\ttfamily\footnotesize, caption={Verifier output for the demo results and for a tampered copy (key IRIs shortened, TSA line wrapped).}, label={lst:verify}]
-$ verify -r results.srj -a attestation.ttl -k did:key:zDnaex...oTeQ
-Attestation     : urn:uuid:c4d56f2d-56e9-48e3-a2e8-2b2b36c44d8e
-Signed by       : did:key:zDnaex...oTeQ#zDnaex...oTeQ
+$ verify -r results.srj -a attestation.ttl -k did:key:zDnaev...L8oz
+Attestation     : urn:uuid:cdd15485-9ab6-40a8-9993-7827c00606d3
+Signed by       : did:key:zDnaev...L8oz#zDnaev...L8oz
 Signature       : OK
-Timestamp       : OK  2026-11-19T16:19:00Z  (trusted)
+Timestamp       : OK  2026-11-19T16:31:41Z  (trusted)
   TSA           : C=US,O=DigiCert\, Inc.,CN=DigiCert SHA256 RSA4096 Timestamp
                   Responder 2026 1  via http://timestamp.digicert.com
 Requested by    : alice (BASIC)
-Dataset state   : urn:uuid:1c734d07-be93-4361-9e19-b9741842893c#v1  (version 1)
+Dataset state   : urn:uuid:69fd58e1-ed99-470f-b95f-426569c251ea#v1  (version 1)
 Solutions       : 3 attested, 3 row(s) carry this attestation
 Result digest   : OK
 VERIFIED
 
-$ verify -r results-tampered.srj -a attestation.ttl -k did:key:zDnaex...oTeQ
+$ verify -r results-tampered.srj -a attestation.ttl -k did:key:zDnaev...L8oz
 ...
 Result digest   : MISMATCH
 Problem         : Result digest mismatch: attestation feb2d70a...f06efebe, rows b1c94dd9...92ecdc56
@@ -1431,7 +1448,7 @@ those the script prints.
 \midrule
 1 & Start the signer and Fuseki & The module creates a P-256 key on the signer's token;
 \code{/\$/provenance/keys} lists it, \code{ES256}, as the current key
-\code{DEMO-DID1}. \\
+\code{did:key:zDnaev...L8oz}. \\
 2 & Load three people through the Graph Store Protocol & Response header
 \code{X-Dataset-Version: 1}. \\
 3 & Run the attested query (Example~\ref{lst:query}), first without logging in, then as
