@@ -48,7 +48,7 @@ Every row has `?cert` bound to the same `<urn:uuid:…>`. Project `?cert` explic
 ```bash
 curl -H 'Accept: text/turtle' "http://localhost:3030/\$/provenance/certificate/<uuid>" > certificate.ttl
 
-docker run --rm -v "$PWD:/data:ro" jena-intrinsic-provenance:0.10.0 \
+docker run --rm -v "$PWD:/data:ro" jena-intrinsic-provenance:0.11.0 \
   verify --results /data/results.srj --cert /data/certificate.ttl --expect-key did:key:z6Mk…
 ```
 
@@ -148,7 +148,7 @@ scripts/build-whitepaper.sh      # docs/whitepaper/build/whitepaper.pdf (needs T
 |---|---|
 | `jip-fuseki/target/jena-intrinsic-provenance.jar` | The Fuseki module. Jena itself is not bundled; the verifier library, titanium-rdfc (relocated) and BouncyCastle's bcpkix/bcutil are. It uses the bcprov in Fuseki's server jar. |
 | `jip-verifier-cli/target/jip-verify.jar` | The offline verifier, self-contained (`java -jar`). |
-| `jip-verifier/target/jip-verifier-0.10.0.jar` | The verifier library, for use as a Maven dependency. |
+| `jip-verifier/target/jip-verifier-0.11.0-SNAPSHOT.jar` | The verifier library, for use as a Maven dependency. |
 
 To use the module with your own Fuseki 6.2.0, put `jena-intrinsic-provenance.jar` on the classpath next to
 `fuseki-server.jar`. [`docker/entrypoint.sh`](docker/entrypoint.sh) shows the command line.
