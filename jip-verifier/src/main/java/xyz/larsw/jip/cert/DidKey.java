@@ -1,12 +1,18 @@
 package xyz.larsw.jip.cert;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
 import java.security.PublicKey;
 import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
-import java.util.HexFormat;
+
+import org.bouncycastle.asn1.ASN1Encoding;
+import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 
 /**
  * Ed25519 public keys as {@code did:key} identifiers (https://w3c-ccg.github.io/did-key-spec/),
@@ -24,8 +30,8 @@ public final class DidKey {
     private static final String PREFIX = "did:key:";
     /** multicodec ed25519-pub (0xed) as unsigned varint. */
     private static final byte[] MULTICODEC_ED25519_PUB = { (byte)0xed, 0x01 };
-    /** DER prefix of an X.509 SubjectPublicKeyInfo for Ed25519. */
-    private static final byte[] X509_PREFIX = HexFormat.of().parseHex("302a300506032b6570032100");
+    /** id-Ed25519 without parameters (RFC 8410). */
+    private static final AlgorithmIdentifier ED25519 = new AlgorithmIdentifier(EdECObjectIdentifiers.id_Ed25519);
     private static final int KEY_LENGTH = 32;
 
     /** {@code z6Mk...} for a raw 32-byte Ed25519 public key. */
@@ -81,16 +87,26 @@ public final class DidKey {
         }
     }
 
-    /** DER X.509 SubjectPublicKeyInfo for a raw 32-byte Ed25519 public key. */
+    /** DER X.509 SubjectPublicKeyInfo for a raw 32-byte Ed25519 public key (RFC 8410). */
     public static byte[] toSpki(byte[] rawPublicKey) {
-        return concat(X509_PREFIX, checkLength(rawPublicKey));
+        try {
+            return new SubjectPublicKeyInfo(ED25519, checkLength(rawPublicKey)).getEncoded(ASN1Encoding.DER);
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        }
     }
 
     /** Raw 32-byte Ed25519 public key from a DER X.509 SubjectPublicKeyInfo. */
     public static byte[] fromSpki(byte[] spki) {
-        if ( spki.length != X509_PREFIX.length + KEY_LENGTH || !Arrays.equals(Arrays.copyOf(spki, X509_PREFIX.length), X509_PREFIX) )
+        SubjectPublicKeyInfo info;
+        try {
+            info = SubjectPublicKeyInfo.getInstance(spki);
+        } catch (RuntimeException ex) {
+            throw new IllegalArgumentException("Not an Ed25519 SubjectPublicKeyInfo", ex);
+        }
+        if ( info == null || !ED25519.equals(info.getAlgorithm()) || info.getPublicKeyData().getPadBits() != 0 )
             throw new IllegalArgumentException("Not an Ed25519 SubjectPublicKeyInfo");
-        return Arrays.copyOfRange(spki, X509_PREFIX.length, spki.length);
+        return checkLength(info.getPublicKeyData().getOctets());
     }
 
     private static byte[] checkLength(byte[] rawPublicKey) {

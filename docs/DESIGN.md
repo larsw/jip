@@ -323,4 +323,7 @@ These are the places where building the PoC refined the plan above.
   Shiro), but not `bcpkix`/`bcutil`. The module jar shades those two, also unrelocated, at the
   same version (`ver.bouncycastle`), so they link against Fuseki's `bcprov`; none of their
   classes overlap with the server jar. Keep the version in step when moving to another Fuseki.
-  BouncyCastle is used only through its lightweight API; no JCE provider is registered.
+  BouncyCastle is used only through its lightweight API; no JCE provider is registered. Besides
+  the Time-Stamp Protocol it handles the Ed25519 key encodings (PKCS#8, SubjectPublicKeyInfo,
+  PEM) and derives the public key from the seed; signing and verifying stay on the JDK's Ed25519.
+  Base58 and the multicodec prefixes of `did:key` remain hand-written: BouncyCastle has neither.

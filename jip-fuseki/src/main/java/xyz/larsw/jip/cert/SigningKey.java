@@ -1,6 +1,8 @@
 package xyz.larsw.jip.cert;
 
 import java.io.IOException;
+import java.io.StringReader;
+import java.io.StringWriter;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -8,21 +10,23 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
-import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Signature;
-import java.security.interfaces.EdECPrivateKey;
-import java.security.spec.NamedParameterSpec;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.HexFormat;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
+import org.bouncycastle.asn1.ASN1Encoding;
+import org.bouncycastle.asn1.ASN1OctetString;
+import org.bouncycastle.asn1.DEROctetString;
+import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters;
+import org.bouncycastle.util.io.pem.PemObject;
+import org.bouncycastle.util.io.pem.PemReader;
+import org.bouncycastle.util.io.pem.PemWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,74 +34,95 @@ import org.slf4j.LoggerFactory;
  * An Ed25519 signing key, published as a {@code did:key} (see {@link DidKey}).
  * <p>
  * Stored as PEM with a {@code PRIVATE KEY} (PKCS#8) block and, when written by this class, a
- * {@code PUBLIC KEY} block. The JDK has no API to derive an Ed25519 public key from a private
- * key, so the key pair is regenerated from the 32-byte seed through the JDK's own generator
- * (RFC 8032 key generation is deterministic in the seed).
+ * {@code PUBLIC KEY} block. The key is held as its 32-byte RFC 8032 seed. BouncyCastle derives
+ * the public key and handles the PKCS#8 and PEM encodings; signing uses the JDK's Ed25519.
  */
 public final class SigningKey implements ProofSigner {
     private static final Logger LOG = LoggerFactory.getLogger(SigningKey.class);
 
     /** multicodec ed25519-priv (0x1300) as unsigned varint. */
     private static final byte[] MULTICODEC_ED25519_PRIV = { (byte)0x80, 0x26 };
-    /** DER prefix of a PKCS#8 PrivateKeyInfo for Ed25519. */
-    private static final byte[] PKCS8_PREFIX = HexFormat.of().parseHex("302e020100300506032b657004220420");
+    private static final AlgorithmIdentifier ED25519 = new AlgorithmIdentifier(EdECObjectIdentifiers.id_Ed25519);
+    private static final int SEED_LENGTH = Ed25519PrivateKeyParameters.KEY_SIZE;
 
+    private final byte[] seed;
     private final PrivateKey privateKey;
     private final byte[] rawPublicKey;
 
-    private SigningKey(PrivateKey privateKey, byte[] rawPublicKey) {
-        this.privateKey = privateKey;
-        this.rawPublicKey = rawPublicKey;
+    private SigningKey(byte[] seed) {
+        this.seed = seed.clone();
+        this.rawPublicKey = new Ed25519PrivateKeyParameters(seed, 0).generatePublicKey().getEncoded();
+        try {
+            this.privateKey = KeyFactory.getInstance("Ed25519").generatePrivate(new PKCS8EncodedKeySpec(pkcs8(seed)));
+        } catch (GeneralSecurityException ex) {
+            throw new IllegalStateException("Ed25519 not available", ex);
+        }
     }
 
     // ---- Construction
 
     /** Generate a new random key. */
     public static SigningKey generate() {
-        byte[] seed = new byte[32];
+        byte[] seed = new byte[SEED_LENGTH];
         new SecureRandom().nextBytes(seed);
-        return fromSeed(seed);
+        return new SigningKey(seed);
     }
 
     /** Key from a 32-byte Ed25519 seed (the RFC 8032 private key). */
     public static SigningKey fromSeed(byte[] seed) {
-        if ( seed.length != 32 )
+        if ( seed.length != SEED_LENGTH )
             throw new IllegalArgumentException("Ed25519 seed must be 32 bytes");
-        try {
-            KeyPairGenerator kpg = KeyPairGenerator.getInstance("Ed25519");
-            kpg.initialize(NamedParameterSpec.ED25519, new FixedSeedRandom(seed));
-            KeyPair kp = kpg.generateKeyPair();
-            return new SigningKey(kp.getPrivate(), rawPublic(kp.getPublic()));
-        } catch (GeneralSecurityException ex) {
-            throw new IllegalStateException("Ed25519 not available", ex);
-        }
+        return new SigningKey(seed);
     }
 
     /** Key from a multibase {@code privateKeyMultibase} (multicodec ed25519-priv). */
     public static SigningKey fromPrivateKeyMultibase(String multibase) {
         byte[] bytes = Base58.decodeMultibase(multibase);
-        if ( bytes.length != 34 || bytes[0] != MULTICODEC_ED25519_PRIV[0] || bytes[1] != MULTICODEC_ED25519_PRIV[1] )
+        if ( bytes.length != SEED_LENGTH + 2 || bytes[0] != MULTICODEC_ED25519_PRIV[0] || bytes[1] != MULTICODEC_ED25519_PRIV[1] )
             throw new IllegalArgumentException("Not an Ed25519 privateKeyMultibase");
-        return fromSeed(Arrays.copyOfRange(bytes, 2, 34));
+        return fromSeed(Arrays.copyOfRange(bytes, 2, SEED_LENGTH + 2));
     }
 
-    /** Key from PEM text (PKCS#8 PRIVATE KEY; an optional PUBLIC KEY block is checked). */
+    /**
+     * Key from PEM text: a PKCS#8 {@code PRIVATE KEY} block (version 1, or version 2 with the
+     * public key), and optionally a {@code PUBLIC KEY} block. Any public key given must match.
+     */
     public static SigningKey fromPem(String pem) {
-        byte[] pkcs8 = pemBlock(pem, "PRIVATE KEY");
-        if ( pkcs8 == null )
+        PemObject privateBlock = null;
+        PemObject publicBlock = null;
+        try ( PemReader reader = new PemReader(new StringReader(pem)) ) {
+            for ( PemObject o = reader.readPemObject() ; o != null ; o = reader.readPemObject() ) {
+                switch (o.getType()) {
+                    case "PRIVATE KEY" -> privateBlock = privateBlock == null ? o : privateBlock;
+                    case "PUBLIC KEY" -> publicBlock = publicBlock == null ? o : publicBlock;
+                    default -> {}
+                }
+            }
+        } catch (IOException ex) {
+            throw new IllegalArgumentException("Bad PEM: " + ex.getMessage(), ex);
+        }
+        if ( privateBlock == null )
             throw new IllegalArgumentException("No PRIVATE KEY block in PEM");
+
+        SigningKey key;
+        byte[] embeddedPublic;
         try {
-            PrivateKey pk = KeyFactory.getInstance("Ed25519").generatePrivate(new PKCS8EncodedKeySpec(pkcs8));
-            if ( !(pk instanceof EdECPrivateKey edPk) || edPk.getBytes().isEmpty() )
-                throw new IllegalArgumentException("Not an Ed25519 private key");
-            SigningKey key = fromSeed(edPk.getBytes().get());
-            byte[] spki = pemBlock(pem, "PUBLIC KEY");
-            if ( spki != null && !Arrays.equals(DidKey.fromSpki(spki), key.rawPublicKey) )
-                throw new IllegalArgumentException("PUBLIC KEY block does not match the PRIVATE KEY");
-            return key;
-        } catch (GeneralSecurityException ex) {
+            PrivateKeyInfo info = PrivateKeyInfo.getInstance(privateBlock.getContent());
+            if ( !EdECObjectIdentifiers.id_Ed25519.equals(info.getPrivateKeyAlgorithm().getAlgorithm()) )
+                throw new IllegalArgumentException("Not an Ed25519 private key (algorithm "
+                                                   + info.getPrivateKeyAlgorithm().getAlgorithm() + ")");
+            key = fromSeed(ASN1OctetString.getInstance(info.parsePrivateKey()).getOctets());
+            embeddedPublic = info.getPublicKeyData() == null ? null : info.getPublicKeyData().getOctets();
+        } catch (IOException | RuntimeException ex) {
+            if ( ex instanceof IllegalArgumentException iae && iae.getMessage() != null && iae.getMessage().startsWith("Not an Ed25519") )
+                throw iae;
             throw new IllegalArgumentException("Bad Ed25519 PKCS#8 key: " + ex.getMessage(), ex);
         }
+        if ( embeddedPublic != null && !Arrays.equals(embeddedPublic, key.rawPublicKey) )
+            throw new IllegalArgumentException("Public key in the PKCS#8 block does not match the private key");
+        if ( publicBlock != null && !Arrays.equals(DidKey.fromSpki(publicBlock.getContent()), key.rawPublicKey) )
+            throw new IllegalArgumentException("PUBLIC KEY block does not match the PRIVATE KEY");
+        return key;
     }
 
     /**
@@ -166,54 +191,32 @@ public final class SigningKey implements ProofSigner {
     }
 
     public String publicPem() {
-        return pem("PUBLIC KEY", DidKey.toSpki(rawPublicKey));
+        return pem(new PemObject("PUBLIC KEY", DidKey.toSpki(rawPublicKey)));
     }
 
-    /** PRIVATE KEY (PKCS#8) and PUBLIC KEY blocks. */
+    /** PRIVATE KEY (PKCS#8 version 1) and PUBLIC KEY blocks. */
     public String toPem() {
-        byte[] seed = ((EdECPrivateKey)privateKey).getBytes().orElseThrow();
-        return pem("PRIVATE KEY", concat(PKCS8_PREFIX, seed)) + publicPem();
+        return pem(new PemObject("PRIVATE KEY", pkcs8(seed))) + publicPem();
     }
 
     // ---- Helpers
 
-    private static byte[] rawPublic(PublicKey pub) {
-        return DidKey.fromSpki(pub.getEncoded());
-    }
-
-    private static String pem(String type, byte[] der) {
-        String b64 = Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII)).encodeToString(der);
-        return "-----BEGIN " + type + "-----\n" + b64 + "\n-----END " + type + "-----\n";
-    }
-
-    private static byte[] pemBlock(String pem, String type) {
-        Pattern p = Pattern.compile("-----BEGIN " + type + "-----(.*?)-----END " + type + "-----", Pattern.DOTALL);
-        Matcher m = p.matcher(pem);
-        if ( !m.find() )
-            return null;
-        return Base64.getMimeDecoder().decode(m.group(1).replaceAll("\\s", ""));
-    }
-
-    private static byte[] concat(byte[] a, byte[] b) {
-        byte[] r = Arrays.copyOf(a, a.length + b.length);
-        System.arraycopy(b, 0, r, a.length, b.length);
-        return r;
-    }
-
-    /** Supplies the given seed to the JDK Ed25519 key pair generator. */
-    private static final class FixedSeedRandom extends SecureRandom {
-        private static final long serialVersionUID = 1L;
-        private final byte[] seed;
-
-        FixedSeedRandom(byte[] seed) {
-            this.seed = seed.clone();
+    /** PKCS#8 PrivateKeyInfo (version 1) for an Ed25519 seed, DER (RFC 8410). */
+    private static byte[] pkcs8(byte[] seed) {
+        try {
+            return new PrivateKeyInfo(ED25519, new DEROctetString(seed)).getEncoded(ASN1Encoding.DER);
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
         }
+    }
 
-        @Override
-        public void nextBytes(byte[] bytes) {
-            if ( bytes.length != seed.length )
-                throw new IllegalStateException("Unexpected request for " + bytes.length + " random bytes");
-            System.arraycopy(seed, 0, bytes, 0, seed.length);
+    private static String pem(PemObject object) {
+        StringWriter out = new StringWriter();
+        try ( PemWriter w = new PemWriter(out) ) {
+            w.writeObject(object);
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
         }
+        return out.toString().replace("\r\n", "\n");
     }
 }

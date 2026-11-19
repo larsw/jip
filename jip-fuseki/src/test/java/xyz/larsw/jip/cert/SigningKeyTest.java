@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.Base64;
 
 import org.apache.jena.graph.Graph;
 import org.apache.jena.graph.GraphMemFactory;
@@ -81,6 +82,42 @@ class SigningKeyTest {
         try {
             assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(pem)));
         } catch (IOException | UnsupportedOperationException ignored) {}
+    }
+
+    /** Written by {@code openssl genpkey -algorithm ed25519} (a throwaway test key). */
+    private static final String OPENSSL_PEM = """
+            -----BEGIN PRIVATE KEY-----
+            MC4CAQAwBQYDK2VwBCIEIBTa8HmB4reLI0EfDeeWYaUlRWQRumhNqjCmy8Kt17y0
+            -----END PRIVATE KEY-----
+            """;
+    /** Its public key, from {@code openssl pkey -pubout}. */
+    private static final String OPENSSL_PUBLIC_HEX = "877e7cff47026655552a64dba32eb02ce8ef3c620142f11c07c35796fc4c3b16";
+
+    @Test
+    void readsKeysWrittenByOpenSslAndTheJdk() throws Exception {
+        assertEquals(OPENSSL_PUBLIC_HEX, HexFormat.of().formatHex(SigningKey.fromPem(OPENSSL_PEM).rawPublicKey()));
+
+        java.security.KeyPair jdk = java.security.KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        String pem = "-----BEGIN PRIVATE KEY-----\n" + Base64.getMimeEncoder().encodeToString(jdk.getPrivate().getEncoded())
+                     + "\n-----END PRIVATE KEY-----\n";
+        assertArrayEquals(DidKey.fromSpki(jdk.getPublic().getEncoded()), SigningKey.fromPem(pem).rawPublicKey());
+        // What toPem writes, the JDK reads.
+        String written = SigningKey.generate().toPem();
+        String block = written.substring(0, written.indexOf("-----BEGIN PUBLIC KEY-----"))
+                .replaceAll("-----[A-Z ]+-----", "").replaceAll("\\s", "");
+        assertNotNull(java.security.KeyFactory.getInstance("Ed25519")
+                .generatePrivate(new java.security.spec.PKCS8EncodedKeySpec(Base64.getDecoder().decode(block))));
+    }
+
+    @Test
+    void otherKeyTypesAreRejected() throws Exception {
+        java.security.KeyPair ec = java.security.KeyPairGenerator.getInstance("EC").generateKeyPair();
+        String pem = "-----BEGIN PRIVATE KEY-----\n" + Base64.getMimeEncoder().encodeToString(ec.getPrivate().getEncoded())
+                     + "\n-----END PRIVATE KEY-----\n";
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> SigningKey.fromPem(pem));
+        assertTrue(ex.getMessage().startsWith("Not an Ed25519"), ex.getMessage());
+        assertThrows(IllegalArgumentException.class, () -> SigningKey.fromPem("no pem here"));
+        assertThrows(IllegalArgumentException.class, () -> DidKey.fromSpki(ec.getPublic().getEncoded()));
     }
 
     @Test
