@@ -69,6 +69,14 @@ class VerifyTest {
     }
 
     @Test
+    void trustedKeysOption() throws IOException {
+        assertEquals(2, Verify.run("--results", results, "--attestation", attestationFile, "--trusted-keys"));
+        assertEquals(2, Verify.run("--results", results, "--attestation", attestationFile, "--trusted-keys", tmp.resolve("missing.json").toString()));
+        String notAJwkSet = Files.writeString(tmp.resolve("bad.json"), "{\"keys\": 1}").toString();
+        assertEquals(2, Verify.run("--results", results, "--attestation", attestationFile, "--trusted-keys", notAJwkSet));
+    }
+
+    @Test
     void timestampOptions() {
         assertEquals(1, Verify.run("--results", results, "--attestation", attestationFile, "--tsa-trust", "none", "--require-timestamp"));
         assertEquals(2, Verify.run("--results", results, "--attestation", attestationFile, "--tsa-trust"));

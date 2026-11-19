@@ -255,7 +255,7 @@ class AttestServiceTest {
             assertTrue(g.contains(attestationIri, Vocab.timestamp, Node.ANY));
             assertTrue(g.contains(Node.ANY, Vocab.timestampAuthority, NodeFactory.createURI(url.toString())));
 
-            AttestationVerifier.Options trusting = new AttestationVerifier.Options(Optional.of(key.didKey()), Optional.of(tsa.anchors()), true);
+            AttestationVerifier.Options trusting = new AttestationVerifier.Options(java.util.Set.of(key.didKey()), Optional.of(tsa.anchors()), true);
             AttestationVerifier.Report report = AttestationVerifier.verify(g, r.vars(), r.rows(), trusting);
             assertTrue(report.valid(), () -> report.problems().toString());
             assertEquals(1, report.timestamps().size());
@@ -266,7 +266,7 @@ class AttestServiceTest {
             assertTrue(system.valid(), () -> system.problems().toString());
             assertEquals(Boolean.FALSE, system.timestamps().get(0).token().trusted());
             AttestationVerifier.Report systemRequired = AttestationVerifier.verify(g, r.vars(), r.rows(),
-                    new AttestationVerifier.Options(Optional.of(key.didKey()), Optional.of(Rfc3161.systemTrustAnchors()), true));
+                    new AttestationVerifier.Options(java.util.Set.of(key.didKey()), Optional.of(Rfc3161.systemTrustAnchors()), true));
             assertFalse(systemRequired.valid());
         }
     }
@@ -288,7 +288,7 @@ class AttestServiceTest {
         assertTrue(report.valid(), "attestation without a timestamp is still valid");
         assertTrue(report.timestamps().isEmpty());
         AttestationVerifier.Report requiring = AttestationVerifier.verify(store.get(attestationIri).orElseThrow(), r.vars(), r.rows(),
-                new AttestationVerifier.Options(Optional.of(key.didKey()), Optional.empty(), true));
+                new AttestationVerifier.Options(java.util.Set.of(key.didKey()), Optional.empty(), true));
         assertFalse(requiring.valid(), "verifier asked to require a timestamp");
     }
 
@@ -326,7 +326,7 @@ class AttestServiceTest {
             Graph after = store.get(attestationIri).orElseThrow();
             assertTrue(after.contains(attestationIri, Vocab.timestamp, Node.ANY));
             AttestationVerifier.Report report = AttestationVerifier.verify(after, r.vars(), r.rows(),
-                    new AttestationVerifier.Options(Optional.of(key.didKey()), Optional.of(gated.tsa().anchors()), true));
+                    new AttestationVerifier.Options(java.util.Set.of(key.didKey()), Optional.of(gated.tsa().anchors()), true));
             assertTrue(report.valid(), () -> report.problems().toString());
             assertEquals(1, report.timestamps().size());
         }
@@ -418,6 +418,23 @@ class AttestServiceTest {
         g.remove(Node.ANY, Vocab.principal, Node.ANY);
         g.add(NodeFactory.createURI(attestationIri.getURI() + "#requester"), Vocab.principal, NodeFactory.createLiteralString("mallory"));
         assertFalse(AttestationVerifier.verify(g, r.vars(), r.rows(), Optional.of(key.didKey())).signatureValid());
+    }
+
+    @Test
+    void trustedKeysAcceptAnyKeyOfTheSetAndNoOther() throws Exception {
+        Result r = query(dsg, ORDERED_QUERY);
+        Node attestationIri = attestations(r, "attestation").iterator().next();
+        Graph g = store.get(attestationIri).orElseThrow();
+        String other = SigningKey.generate().didKey();
+        AttestationVerifier.Report both = AttestationVerifier.verify(g, r.vars(), r.rows(),
+                new AttestationVerifier.Options(java.util.Set.of(other, key.didKey()), Optional.empty(), false));
+        assertTrue(both.valid(), () -> both.problems().toString());
+        AttestationVerifier.Report wrong = AttestationVerifier.verify(g, r.vars(), r.rows(),
+                new AttestationVerifier.Options(java.util.Set.of(other), Optional.empty(), false));
+        assertFalse(wrong.valid());
+        assertTrue(wrong.problems().get(0).contains("not the expected key"), wrong.problems().toString());
+        // The key is recorded in the store's key history.
+        assertTrue(store.keyActivations().containsKey(key.didKey()));
     }
 
     @Test

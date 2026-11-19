@@ -110,9 +110,10 @@ edit("docs/DESIGN.md", [(rf"`xyz\.larsw:\*:{v}`", f"`xyz.larsw:*:{new}`")])
 for f in ["docker-compose.yml", "docker/Dockerfile", "docker/signer/Dockerfile", "scripts/demo.sh"]:
     edit(f, [(rf"(jena-intrinsic-provenance|jip-signer):{re.escape(base_old)}\b", rf"\g<1>:{base_new}")],
          required=base_old != base_new)
+# The whitepaper names the full version: X.Y.Z for a release, X.Y.Z-SNAPSHOT in between.
 edit("docs/whitepaper/whitepaper.tex",
-     [(rf"Proof-of-concept report, jena-intrinsic-provenance {re.escape(base_old)}\b",
-       f"Proof-of-concept report, jena-intrinsic-provenance {base_new}")], required=base_old != base_new)
+     [(r"Proof-of-concept report, jena-intrinsic-provenance [0-9]+\.[0-9]+\.[0-9]+(-SNAPSHOT)?",
+       f"Proof-of-concept report, jena-intrinsic-provenance {new}")])
 if release:
     def vocab(s):
         s = re.sub(r'owl:versionInfo "[^"]*"', f'owl:versionInfo "{new}"', s)

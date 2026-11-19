@@ -257,6 +257,25 @@ waiting for its RFC 3161 timestamp. The triple is removed in the same transactio
 timestamp."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
+## ---- Signing keys
+
+jip:signingKeys
+    a rdfs:Resource ;
+    rdfs:label "signing keys"@en ;
+    rdfs:comment """Name of a graph in the attestation store that records every key the server has
+signed with, as <did:key:...> jip:activatedAt "..."^^xsd:dateTime, one value per activation. It
+keeps retired keys known after a key rollover: GET /$/provenance/keys publishes the history as a
+JWK Set, with each key's status (current or retired)."""@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
+jip:activatedAt
+    a owl:DatatypeProperty ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "activated at"@en ;
+    rdfs:comment """In the jip:signingKeys graph: a time at which the key (a did:key) became the
+server's signing key. A key that is activated again after another one gets another value."""@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
 ## ---- SPARQL functions
 
 jip:tdbDataVersion

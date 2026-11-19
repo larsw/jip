@@ -9,7 +9,8 @@
 #   --no-tsa   issue attestations without timestamps
 #
 # Needs: docker (compose v2), curl, jq. Writes files to ./demo-out. JIP_PORT sets the host port
-# (default 3030).
+# (default 3030); JIP_SIGNER=local signs with a local Ed25519 key instead of the signer container
+# (steps 13 and 14, which need the container, are then skipped).
 set -euo pipefail
 
 TSA_DEFAULT="http://timestamp.digicert.com http://timestamp.sectigo.com https://freetsa.org/tsr"
@@ -26,6 +27,7 @@ while [[ $# -gt 0 ]]; do
 done
 # docker-compose.yml passes this to the server as PROVENANCE_TSA_URLS.
 export JIP_TSA_URLS="$TSA_URLS"
+SIGNER="${JIP_SIGNER:-pkcs11}"
 
 cd "$(dirname "$0")/.."
 BASE=http://localhost:${JIP_PORT:-3030}
@@ -70,6 +72,19 @@ verify() {
   return "${PIPESTATUS[0]}"
 }
 
+# verify_trusted <results> <attestation> <jwk-set>: as verify, but trust any key in the JWK Set
+verify_trusted() {
+  docker run --rm -v "$OUT:/data:ro" "$IMAGE" verify \
+    --results "/data/$1" --attestation "/data/$2" --trusted-keys "/data/$3" | sed 's/^/   | /'
+  return "${PIPESTATUS[0]}"
+}
+
+# keys <file>: fetch the signing keys (a JWK Set) and list them
+keys() {
+  curl -fsS -D "$OUT/keys.headers" -o "$OUT/$1" "$BASE/\$/provenance/keys"
+  jq -r '.keys[] | "   \(.status)\t\(.alg) \(.crv)\t\(.did)\tactivated \(.activated // "-")\(if .retired then ", retired " + .retired else "" end)"' "$OUT/$1"
+}
+
 # fetch_attestation <attestation-iri> <file>: fetch it (as $AS); while its RFC 3161 timestamp is still being fetched
 # the server answers 202 Accepted with Retry-After, so wait and ask again.
 fetch_attestation() {
@@ -108,11 +123,12 @@ fi
 bold "1. Build and start the signer (PKCS#11 token) and Fuseki 6.2.0 + module"
 docker compose --progress quiet up -d --build
 wait_ready
-curl -fsS "$BASE/\$/provenance/key" -o "$OUT/key.json"
-DID=$(jq -r .id "$OUT/key.json")
-info "signing key: $DID"
-info "signer: $(jq -r '"\(.signer), \(.keyType), \(.cryptosuite)"' "$OUT/key.json")"
-if [[ "$(jq -r .signer "$OUT/key.json")" == pkcs11 ]]; then
+info "signing keys (GET /\$/provenance/keys, a JWK Set):"
+keys keys.json
+DID=$(jq -r '.keys[] | select(.status == "current") | .did' "$OUT/keys.json")
+info "Content-Type: $(header Content-Type "$OUT/keys.headers")"
+info "current signing key: $DID (signer: $SIGNER)"
+if [[ "$SIGNER" == pkcs11 ]]; then
   info "the key lives in the signer container (no network); Fuseki reaches it over a Unix socket:"
   docker compose ps --format '{{.Service}}: {{.Image}} ({{.Status}})' | sed 's/^/     /'
 fi
@@ -238,7 +254,7 @@ if [[ -n "$TSA_URLS" ]]; then
   info "(the next run of this script restores the normal list)"
 fi
 
-if [[ "$(jq -r .signer "$OUT/key.json")" == pkcs11 ]]; then
+if [[ "$SIGNER" == pkcs11 ]]; then
   bold "13. Restart the signer container: Fuseki reconnects to the token on the next signature"
   docker compose restart signer >/dev/null 2>&1
   for _ in $(seq 1 30); do
@@ -251,6 +267,23 @@ if [[ "$(jq -r .signer "$OUT/key.json")" == pkcs11 ]]; then
   verify results-restart.srj attestation-restart.ttl
   docker compose logs --no-log-prefix fuseki 2>/dev/null | grep -E 'reconnecting' | tail -1 \
     | sed -e $'s/\x1b\\[[0-9;]*[A-Za-z]//g' -e 's/^/   log: /' || true
+
+  bold "14. Key rollover: sign with a new key; attestations made with the old one still verify"
+  NEW_LABEL=jip-signing-2
+  JIP_PKCS11_KEY=$NEW_LABEL docker compose --progress quiet up -d
+  wait_ready
+  info "PROVENANCE_PKCS11_KEY=$NEW_LABEL (generated on the token on first use); GET /\$/provenance/keys:"
+  keys keys-rollover.json
+  NEW_DID=$(jq -r '.keys[] | select(.status == "current") | .did' "$OUT/keys-rollover.json")
+  [[ "$NEW_DID" != "$DID" ]] || { echo "!! the signing key did not change" >&2; exit 1; }
+  query "$ATTESTED_QUERY" "$OUT/results-rollover.srj" "$OUT/query-rollover.headers"
+  ATTESTATION6=$(jq -r '.results.bindings[0].attestation.value' "$OUT/results-rollover.srj")
+  fetch_attestation "$ATTESTATION6" attestation-rollover.ttl
+  info "a new attestation, checked against the JWK Set (--trusted-keys keys-rollover.json):"
+  verify_trusted results-rollover.srj attestation-rollover.ttl keys-rollover.json
+  info "the step-3 attestation, signed with the retired key, against the same set:"
+  verify_trusted results.srj attestation.ttl keys-rollover.json
+  info "(the next run of this script switches back to jip-signing, which becomes current again)"
 fi
 
 bold "Done. Files are in $OUT"

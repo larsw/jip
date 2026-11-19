@@ -11,12 +11,14 @@ import xyz.larsw.jip.attestation.AttestationTimestamps;
 import xyz.larsw.jip.attestation.AttestationVerifier;
 import xyz.larsw.jip.attestation.Requester;
 import xyz.larsw.jip.attestation.Rfc3161;
+import xyz.larsw.jip.attestation.TrustedKeys;
 
 /**
  * Independent verification of an attested SPARQL result.
  *
  * <pre>
- * java -jar jip-verify.jar --results results.srj --attestation attestation.ttl [--expect-key did:key:z6Mk...]
+ * java -jar jip-verify.jar --results results.srj --attestation attestation.ttl
+ *                          [--expect-key did:key:zDn...]... [--trusted-keys keys.json]...
  *                          [--tsa-trust system|none|anchors.pem] [--require-timestamp]
  * </pre>
  *
@@ -33,13 +35,14 @@ public final class Verify {
     public static int run(String... args) {
         Path results = null;
         Path attestationFile = null;
-        String expectKey = null;
+        java.util.List<String> expectKeys = new java.util.ArrayList<>();
+        java.util.List<Path> trustedKeyFiles = new java.util.ArrayList<>();
         String tsaTrust = "system";
         boolean requireTimestamp = false;
         for ( int i = 0 ; i < args.length ; i++ ) {
             String a = args[i];
             switch (a) {
-                case "--results", "-r", "--attestation", "-a", "--expect-key", "-k", "--tsa-trust" -> {
+                case "--results", "-r", "--attestation", "-a", "--expect-key", "-k", "--trusted-keys", "--tsa-trust" -> {
                     String value = i + 1 < args.length ? args[i + 1] : null;
                     // A following option is a forgotten value, not a file; write ./-name for a
                     // file whose name starts with '-'.
@@ -51,7 +54,8 @@ public final class Verify {
                             case "--results", "-r" -> results = Path.of(value);
                             case "--attestation", "-a" -> attestationFile = Path.of(value);
                             case "--tsa-trust" -> tsaTrust = value;
-                            default -> expectKey = value;
+                            case "--trusted-keys" -> trustedKeyFiles.add(Path.of(value));
+                            default -> expectKeys.add(value);
                         }
                     } catch (InvalidPathException ex) {
                         return usageError("Bad file name for " + a + ": " + ex.getMessage());
@@ -73,7 +77,10 @@ public final class Verify {
                 case "none" -> Optional.empty();
                 default -> Optional.of(Rfc3161.trustAnchors(Path.of(tsaTrust)));
             };
-            AttestationVerifier.Options options = new AttestationVerifier.Options(Optional.ofNullable(expectKey), anchors, requireTimestamp);
+            Set<String> trusted = new java.util.LinkedHashSet<>(expectKeys);
+            for ( Path f : trustedKeyFiles )
+                trusted.addAll(TrustedKeys.fromJwkSet(f));
+            AttestationVerifier.Options options = new AttestationVerifier.Options(trusted, anchors, requireTimestamp);
             AttestationVerifier.Report report = AttestationVerifier.verify(attestationFile, results, options);
             print(report);
             return report.valid() ? 0 : 1;
@@ -117,9 +124,12 @@ public final class Verify {
     private static void usage() {
         System.err.println("""
                 Usage: verify --results <results.srj|.srx|.tsv> --attestation <attestation.ttl|.jsonld|.nt>
-                              [--expect-key did:key:...] [--tsa-trust system|none|<anchors.pem>] [--require-timestamp]
-                  Verifies the eddsa-rdfc-2022 proof of a result attestation and that the rows carrying the
-                  attestation IRI match its RDFC-1.0 digest. RFC 3161 timestamps on the attestation are
+                              [--expect-key did:key:...]... [--trusted-keys <keys.json>]...
+                              [--tsa-trust system|none|<anchors.pem>] [--require-timestamp]
+                  Verifies the Data Integrity proof (ecdsa-rdfc-2019 or eddsa-rdfc-2022) of a result
+                  attestation and that the rows carrying the attestation IRI match its RDFC-1.0 digest.
+                  --expect-key and --trusted-keys (a JWK Set, such as the server's /$/provenance/keys)
+                  restrict the keys the attestation may be signed with; both can be repeated. RFC 3161 timestamps on the attestation are
                   checked too; their TSA certificates are chained to the JVM trust store (system, the
                   default), to the certificates in a PEM file, or not at all (none). An untrusted
                   timestamp is reported but only fails verification with --require-timestamp, which

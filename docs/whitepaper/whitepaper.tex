@@ -113,7 +113,7 @@
 \title{\sffamily\bfseries\color{accent}Intrinsic Provenance for Apache Jena\\[0.4em]
   \Large\mdseries\color{black}A Persistent Data Version for TDB2 and\\Signed Attestations for SPARQL Results}
 \author{\large Lars Wilhelmsen\\[0.2em]\normalsize\href{mailto:lars@sral.org}{\texttt{lars@sral.org}}}
-\date{\normalsize Proof-of-concept report, jena-intrinsic-provenance 0.16.0\\[0.2em]November 2026}
+\date{\normalsize Proof-of-concept report, jena-intrinsic-provenance 0.16.0-SNAPSHOT\\[0.2em]November 2026}
 
 \begin{document}
 
@@ -1131,30 +1131,43 @@ module is an HSM's PKCS\#11 library instead of SoftHSM2.}
 \label{fig:separation}
 \end{figure}
 
-The endpoint \code{GET /\$/provenance/key} publishes the public key in four forms, with its
-key type, cryptosuite, and signer, as Example~\ref{lst:key} shows.
-
-\needspace{14\baselineskip}
-\begin{lstlisting}[caption={The public key as returned by \code{GET /\$/provenance/key} in the demo (PEM shortened).}, label={lst:key}]
-{
-  "id": "did:key:zDnaexph6yftYxCakoeNb24rUSBVtDphR8DXR9dVqCB8PoTeQ",
-  "verificationMethod": "did:key:zDnaex...oTeQ#zDnaex...oTeQ",
-  "type": "Multikey",
-  "publicKeyMultibase": "zDnaexph6yftYxCakoeNb24rUSBVtDphR8DXR9dVqCB8PoTeQ",
-  "publicKeyJwk": { "kty": "EC", "crv": "P-256",
-                    "x": "4UhQcNq8vzp8WtVbhD2oYjvy8jq8dk-a2OFz29y3EhE",
-                    "y": "Jwpb7QWbLv4yusfTgUtHaM_pUaGScnl_BntksEve3uM" },
-  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZI...",
-  "keyType": "P-256",
-  "cryptosuite": "ecdsa-rdfc-2019",
-  "signer": "pkcs11"
-}
-\end{lstlisting}
-
 Because a \code{did:key} contains its own public key, anyone can produce an attestation that
 verifies against a key they generated themselves. A verifier must therefore compare the key with one it
 already trusts, obtained through another channel. The verifier's \code{-{}-expect-key} option
 does this comparison.
+
+Keys are replaced from time to time, because a key has reached the end of its planned lifetime,
+the token is replaced, or the key may have been exposed. Attestations signed before such a
+\emph{rollover} must still verify afterwards, so the server publishes its old keys along with
+the current one. The attestation store keeps a key history in the named graph
+\code{jip:signingKeys}: one triple \code{<did:key:...> jip:activatedAt t} each time the server
+starts signing with a key that is not the latest one recorded. The module records the key when
+the server starts and before the first attestation, so a restart with the same key writes
+nothing. A rollover is a restart with another key, that is, another label on the token or another
+key file; returning to an earlier key makes that key current again.
+
+The endpoint \code{GET /\$/provenance/keys} publishes the history as a JSON Web Key Set
+(JWK Set)~\cite{jwk}, with the media type \code{application/jwk-set+json}. The current key comes
+first, then the retired keys, the most recently activated first. Each key has the standard
+members for its type (\code{kty}, \code{crv}, \code{x}, and for EC keys \code{y}), \code{alg}
+(\code{ES256}, \code{ES384}, or \code{EdDSA}), \code{use} with the value \code{sig}, and as
+\code{kid} the verification method that the attestations name. Four further members describe
+the key's place in the history: \code{did}, \code{status} (\code{current} or \code{retired}),
+\code{activated} (the latest activation), and for a retired key \code{retired}, the time the
+next key was activated. Example~\ref{lst:keys} shows the set after the demo's rollover.
+
+\needspace{20\baselineskip}
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize, caption={The JWK Set returned by \code{GET /\$/provenance/keys} after the rollover in the demo (key identifiers shortened).}, label={lst:keys}]
+KEYS-LISTING
+\end{lstlisting}
+
+The verifier's \code{-{}-trusted-keys} option reads such a set, saved through a channel the
+verifier trusts, and accepts an attestation signed with any key in it. It derives each
+\code{did:key} from the key material and ignores \code{kid}, so a set cannot vouch for a key it
+does not contain. It does not check that an attestation was made while its key was current: the
+proof's creation time is the server's own statement, and an asynchronous timestamp may land
+after the rollover. A key that was retired because it was exposed should therefore be removed
+from the trusted set instead of being kept as retired.
 
 \subsection{Storing Attestations}
 \label{sec:store}
@@ -1179,8 +1192,8 @@ verification works in five steps:
 
 \begin{enumerate}
 \item Check the proof against the key in the \code{did:key}, over the attestation without its
-  timestamps, with the cryptosuite that fits the key type. With \code{-{}-expect-key}, also
-  check that the key is the expected one.
+  timestamps, with the cryptosuite that fits the key type. With \code{-{}-expect-key} or
+  \code{-{}-trusted-keys}, also check that the key is one of the trusted keys.
 \item Check each timestamp: the token's imprint must be the hash of the proof's signature, the
   TSA's signature must verify with the certificate in the token, and that certificate must be
   a time-stamping certificate valid at \code{genTime}. Then chain the TSA certificate, at
@@ -1197,7 +1210,8 @@ verification works in five steps:
 
 The verifier also reports the requester, if the attestation names one. The short options
 \code{-r}, \code{-a}, and \code{-k} stand for \code{-{}-results}, \code{-{}-attestation}, and
-\code{-{}-expect-key}. A broken timestamp makes the attestation invalid. An untrusted one is
+\code{-{}-expect-key}; \code{-{}-expect-key} may be repeated, and \code{-{}-trusted-keys}
+takes a JWK Set as published by the server. A broken timestamp makes the attestation invalid. An untrusted one is
 reported, but it fails verification only with \code{-{}-require-timestamp}, which demands at
 least one valid timestamp that is not untrusted. The verifier exits with
 status 0 when everything matches, 1 when something does not, and 2 when the input
@@ -1271,7 +1285,7 @@ Table~\ref{tab:endpoints} lists the HTTP endpoints the module adds. The Docker i
 its own Shiro configuration to Fuseki (\file{docker/shiro.ini}, replaceable with
 \code{FUSEKI\_SHIRO}). It requires HTTP Basic authentication, with the demo users alice and
 bob, for the dataset, the attestation store, and attestations, because attestations name their
-requesters. The signing key, the data versions, and the ping endpoint stay public, and the rest
+requesters. The signing keys, the data versions, and the ping endpoint stay public, and the rest
 of the administration area is limited to localhost.
 
 \begin{table}[ht]
@@ -1286,7 +1300,8 @@ Endpoint & Returns \\
 \code{GET /\$/provenance/attestation/\{uuid\}} & The attestation as Turtle, JSON-LD, N-Triples,
 N-Quads, or RDF/XML, chosen by \code{Accept} or \code{?format=}. While its timestamp is
 pending: \code{202 Accepted} with \code{Retry-After} (Example~\ref{lst:pending}). \\
-\code{GET /\$/provenance/key} & The public key (Example~\ref{lst:key}). \\
+\code{GET /\$/provenance/keys} & The current and retired signing keys as a JWK Set
+(Example~\ref{lst:keys}). \\
 \code{GET /\$/provenance/version/\{dataset\}} & The persistent and internal versions of a
 dataset. \\
 \bottomrule
@@ -1320,7 +1335,7 @@ verifier, so that a client can check attestations with the same image without in
 \subsection{Test Suite}
 \label{sec:tests}
 
-The build runs 166 tests, listed in Table~\ref{tab:tests}. They pass on Java 21 during the
+The build runs 171 tests, listed in Table~\ref{tab:tests}. They pass on Java 21 during the
 Docker build. On the development machine (OpenJDK 25) the four PKCS\#11 tests are skipped,
 because they need SoftHSM2, and the others pass.
 
@@ -1346,6 +1361,9 @@ signature, signing with the vector key, and a cryptosuite that does not fit the 
 \code{SigningKeyTest} & 7 & The signing key against the test vectors, PEM round trip and
 persistence, keys written by OpenSSL and the JDK, rejection of other key types and mismatched
 public keys. \\
+\code{KeyHistoryTest} & 3 & The key history in the attestation store across a rollover and a
+return to an earlier key; the JWK Set's order, status, activation and retirement times,
+\code{alg}, and \code{kid}; reading the set back as trusted keys; a forged \code{kid}. \\
 \code{ProvenanceKeysTest} & 7 & Choosing the signer, error messages for a missing module or key
 setting, PIN files, and the \code{did:key}, JWK, and PEM forms of P-256 and P-384 keys. \\
 \code{Pkcs11SignerTest} & 4 & On a SoftHSM2 token: P-256 and P-384 keys created on the token,
@@ -1355,24 +1373,25 @@ trust anchors, a token for another signature, a corrupted token, TSA certificate
 \code{genTime}, reply and request matching. \\
 \code{TimestampAuthoritiesTest} & 4 & Fallback through a refusing and an unreachable TSA,
 cooldown order, configuration parsing. \\
-\code{AttestServiceTest} & 21 & Round trips for ordered and unordered results, tampering,
+\code{AttestServiceTest} & 22 & Round trips for ordered and unordered results, tampering,
 both empty-result modes, variable names, the cap, unversioned datasets and \code{SILENT}, the
 write-transaction refusal, versions after updates, correlated calls, timestamped
 attestations, both timestamp policies in both modes, a query that does not wait for a held-back
 TSA, resuming pending timestamps after a restart without a second token, the requester from
 the query context and from the request thread, signed and verified, turned off, and absent for
-anonymous requests. \\
+anonymous requests, a set of trusted keys, and the key history. \\
 \code{CanonicalizationCapacityTest} & 1 & Digest time at 10,000 solutions. \\
 \code{FusekiIntegrationTest} & 2 & End to end over HTTP with \file{docker/config.ttl}; 202
-with \code{Retry-After} while a timestamp is pending, then 200. \\
+with \code{Retry-After} while a timestamp is pending, then 200; the JWK Set at
+\code{/keys}. \\
 \code{AuthenticatedRequesterTest} & 1 & Over HTTP with Basic authentication (Fuseki's password
 file): 401 without a login; alice's and bob's attestations name them and verify. \\
 \code{VocabularyTest} & 3 & \file{vocab/jip.ttl} defines every \code{jip:} term the code uses,
 and no others (Appendix~\ref{app:vocab}). \\
-\code{VerifyTest} & 9 & Exit status of the verifier command for good, bad, and missing
-arguments, including the timestamp options. \\
+\code{VerifyTest} & 10 & Exit status of the verifier command for good, bad, and missing
+arguments, including the timestamp options and the trusted-key set. \\
 \midrule
-Total & 166 & \\
+Total & 171 & \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1411,8 +1430,8 @@ those the script prints.
 & Step & Observation \\
 \midrule
 1 & Start the signer and Fuseki & The module creates a P-256 key on the signer's token;
-\code{/\$/provenance/key} reports \code{pkcs11}, \code{ecdsa-rdfc-2019}, and
-\code{did:key:zDnaex...oTeQ} (Example~\ref{lst:key}). \\
+\code{/\$/provenance/keys} lists it, \code{ES256}, as the current key
+\code{DEMO-DID1}. \\
 2 & Load three people through the Graph Store Protocol & Response header
 \code{X-Dataset-Version: 1}. \\
 3 & Run the attested query (Example~\ref{lst:query}), first without logging in, then as
@@ -1440,6 +1459,10 @@ and falls back to DigiCert; the new attestation at version 3 verifies. \\
 13 & Restart the signer container, query again & The first signature fails, the module
 reconnects with a fresh copy of \code{p11-kit-client.so}, and the new attestation, signed with
 the same key, verifies. \\
+14 & Restart Fuseki with another key label (key rollover), query again & The module creates a
+second P-256 key; \code{/keys} lists it as current and the first as retired
+(Example~\ref{lst:keys}). With \code{-{}-trusted-keys} and that set, the new attestation and
+the step-3 attestation both verify. \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1551,7 +1574,10 @@ would remove the component entirely.
 
 Other extensions follow from the limitations above: packaging attestations as Verifiable
 Credentials in JSON-LD so that existing verifiers accept them, access control and rate limits
-for attestation, and HTTP status codes in the 4xx range for refused attestations. Results larger than the cap would need an encoding that can be hashed while
+for attestation, and HTTP status codes in the 4xx range for refused attestations. The
+verifier could enforce key retirement, accepting a retired key only for attestations whose
+trusted RFC~3161 time precedes the retirement, and the key history could record why a key was
+retired, so that an exposed key is distrusted outright. Results larger than the cap would need an encoding that can be hashed while
 streaming, for example a hash tree over chunks of rows, instead of holding all solutions in
 memory. Timestamps could be batched, with one token over a hash tree of many attestations, to
 reduce the number of TSA requests, and revocation data for TSA certificates could be collected
@@ -1598,7 +1624,7 @@ taken.
 \begin{lstlisting}[language=bash, caption={Commands to build, test, and run the demo.}, label={lst:reproduce}]
 docker compose up -d --build    # build the module, run the tests on Java 21, start Fuseki
 scripts/demo.sh --reset         # end-to-end demo; --reset deletes the demo volumes
-mvn test                        # the 166 tests (PKCS#11 tests need SoftHSM2)
+mvn test                        # the 171 tests (PKCS#11 tests need SoftHSM2)
 scripts/build-whitepaper.sh     # this report
 \end{lstlisting}
 
@@ -1671,6 +1697,8 @@ SPARQL text. \\
 for queries. \\
 \code{jip:pendingTimestamps} & Graph in the attestation store listing pending attestations. \\
 \code{jip:timestampPendingSince} & When an attestation started waiting for its timestamp. \\
+\code{jip:signingKeys} & Graph in the attestation store holding the key history. \\
+\code{jip:activatedAt} & When a key became the signing key. \\
 \midrule
 \code{jip:requester} & The requester's role (a \code{prov:Role}) in the query execution. \\
 \code{jip:principal}, \code{jip:authenticationScheme} & The requester's authenticated name and how

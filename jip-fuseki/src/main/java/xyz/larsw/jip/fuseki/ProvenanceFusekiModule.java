@@ -8,6 +8,8 @@ import org.apache.jena.fuseki.server.DataAccessPointRegistry;
 import org.apache.jena.query.ARQ;
 import org.apache.jena.rdf.model.Model;
 import xyz.larsw.jip.attestation.ProvenanceKeys;
+import xyz.larsw.jip.attestation.AttestationStore;
+import xyz.larsw.jip.attestation.KeyHistory;
 import xyz.larsw.jip.attestation.ProvenanceSigner;
 import xyz.larsw.jip.attestation.TimestampAuthorities;
 import xyz.larsw.jip.sys.InitJIP;
@@ -52,6 +54,13 @@ public class ProvenanceFusekiModule implements FusekiAutoModule {
         // Load (or generate) the key at startup so problems show early and the did:key is logged.
         ProvenanceSigner signer = ProvenanceKeys.get();
         LOG.info("Provenance signer: {} {}, {}", signer.kind(), signer.didKey(), signer.description());
+        // Record the key in the store's key history (a new key after a rollover).
+        try {
+            if ( AttestationStore.isConfigured(ARQ.getContext()) )
+                KeyHistory.recordActivation(AttestationStore.fromContext(ARQ.getContext()), signer);
+        } catch (RuntimeException ex) {
+            LOG.warn("Could not record the signing key in the attestation store: {}", ex.getMessage());
+        }
     }
 
     @Override

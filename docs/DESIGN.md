@@ -300,8 +300,19 @@ is out of scope" risk.
   If the file is missing, a key is generated once and written with mode 600.
 - **Publication.** The key is published as a `did:key` (`zDn…` P-256, `z82…` P-384, `z6Mk…`
   Ed25519), which embeds the public key, so attestations verify offline.
-  `GET /$/provenance/key` returns it as a `did:key`, a `publicKeyMultibase`, a JWK and a PEM,
-  with its key type, cryptosuite and signer kind.
+  `GET /$/provenance/keys` returns the current key and all earlier ones as a JWK Set
+  (`application/jwk-set+json`); each JWK has `kid` (the verification method), `alg` (`ES256`,
+  `ES384`, `EdDSA`), `use: "sig"`, and the non-standard `did`, `status`
+  (`current`/`retired`), `activated` and `retired`.
+- **Key rollover.** The attestation store keeps the key history in the graph
+  `jip:signingKeys`: `<did:key:…> jip:activatedAt "…"^^xsd:dateTime`, one value per activation.
+  The module records the current key at server start and before the first attestation, and only
+  if it is not already the latest activation, so a restart with the same key writes nothing. A
+  key's retirement time is the next activation of another key. A rollover is a restart with
+  another key (label or file); nothing else changes. The verifier takes the JWK Set
+  (`--trusted-keys`) and derives each `did:key` from the key material, not from `kid`. It does
+  not enforce retirement times: the proof's `created` is self-asserted, and an async timestamp
+  may be added after the rollover. Enforcing them against the RFC 3161 time is future work.
 
 ### Attestation store
 
@@ -321,7 +332,8 @@ Verification lives in the `jip-verifier` library (`AttestationVerifier`), which 
 arguments, calls the library and prints the report. Together they work as follows:
 
 1. It takes `--results r.srj` (SPARQL JSON), `--attestation c.ttl` and optionally
-   `--expect-key did:key:…`, `--tsa-trust system|none|anchors.pem` and `--require-timestamp`.
+   `--expect-key did:key:…` (repeatable), `--trusted-keys keys.json` (a JWK Set from
+   `/$/provenance/keys`), `--tsa-trust system|none|anchors.pem` and `--require-timestamp`.
 2. It checks the proof against the `did:key`, over the attestation without its timestamps, and
    then any RFC 3161 timestamps (see "Timestamps" above).
 3. It selects the rows whose value is the attestation IRI and rebuilds the `rs:`
@@ -398,7 +410,7 @@ These are the places where building the PoC refined the plan above.
   to 500.
 - **Docker security.** The image passes its own `shiro.ini` to Fuseki with `--shiro` (override
   with `FUSEKI_SHIRO`): HTTP Basic with the demo users alice and bob for `/ds/**`,
-  `/provenance/**` and attestations; `/$/provenance/key`, `/$/provenance/version/**` and
+  `/provenance/**` and attestations; `/$/provenance/keys`, `/$/provenance/version/**` and
   `/$/ping` are public; the rest of `/$/` is localhost-only.
 - **Recorded pattern text.** `jip:servicePattern` is written after undoing the algebra's scope
   renaming (`?/p` → `?p`), so it reads like the query.

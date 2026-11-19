@@ -38,6 +38,7 @@ import xyz.larsw.jip.canon.ResultSetEncoding;
 import xyz.larsw.jip.attestation.AttestationBuilder;
 import xyz.larsw.jip.attestation.AttestationStore;
 import xyz.larsw.jip.attestation.AttestationTimestamps;
+import xyz.larsw.jip.attestation.KeyHistory;
 import xyz.larsw.jip.attestation.ProvenanceKeys;
 import xyz.larsw.jip.attestation.ProvenanceSigner;
 import xyz.larsw.jip.attestation.TimestampAuthorities;
@@ -168,6 +169,7 @@ public class AttestServiceExecutor implements ChainingServiceExecutor {
      */
     private static void storeWithTimestamp(Graph attestation, Node attestationIri, Context context) {
         AttestationStore store = AttestationStore.fromContext(context);
+        KeyHistory.recordActivation(store, ProvenanceKeys.get());
         Optional<TimestampAuthorities> tsa;
         try {
             tsa = TimestampAuthorities.fromContext(context);

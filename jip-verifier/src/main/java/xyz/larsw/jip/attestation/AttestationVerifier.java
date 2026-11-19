@@ -47,7 +47,8 @@ import xyz.larsw.jip.canon.ResultSetEncoding;
  * <li>{@link #verify(Graph, Collection, List, Optional)}: variables and rows already in hand.</li>
  * </ul>
  * None of them needs the server, TDB2 or the signing key; the public key comes from the
- * {@code did:key} in the proof. Pass {@code expectedKey} to pin the key you trust.
+ * {@code did:key} in the proof. Pass the keys you trust ({@code expectedKey}, or a set of keys
+ * in {@link Options}, for example from the server's JWK Set after a key rollover) to pin them.
  */
 public final class AttestationVerifier {
     private AttestationVerifier() {}
@@ -76,14 +77,19 @@ public final class AttestationVerifier {
     /**
      * What to check besides the signature and the digest.
      *
-     * @param expectedKey       the did:key the signature must come from, if pinned
+     * @param trustedKeys       the did:keys the signature may come from; empty: any key
+     *                          (see {@link TrustedKeys} for reading them from a JWK Set)
      * @param tsaTrustAnchors   trust anchors for TSA certificates; empty to skip the chain check
      * @param requireTimestamp  fail unless at least one timestamp is valid and not untrusted
      */
-    public record Options(Optional<String> expectedKey, Optional<Set<TrustAnchor>> tsaTrustAnchors, boolean requireTimestamp) {
+    public record Options(Set<String> trustedKeys, Optional<Set<TrustAnchor>> tsaTrustAnchors, boolean requireTimestamp) {
+        public Options {
+            trustedKeys = Set.copyOf(trustedKeys);
+        }
+
         /** Optional key pin; TSAs checked against the JVM trust store; timestamps optional. */
         public static Options defaults(Optional<String> expectedKey) {
-            return new Options(expectedKey, Optional.of(Rfc3161.systemTrustAnchors()), false);
+            return new Options(expectedKey.map(Set::of).orElse(Set.of()), Optional.of(Rfc3161.systemTrustAnchors()), false);
         }
     }
 
@@ -145,14 +151,15 @@ public final class AttestationVerifier {
             return new Report(null, false, false, null, -1, null, -1, 0, Optional.empty(), List.of(),
                               List.of("Expected one jip:ResultAttestation, found " + attestationNodes.size()));
         Node attestationIri = attestationNodes.get(0);
-        Optional<String> expectedKey = options.expectedKey();
+        Set<String> trustedKeys = options.trustedKeys();
 
         // 1. Signature, over the attestation without its timestamps (added after signing)
         DataIntegrityProof.Verification sig = DataIntegrityProof.verify(AttestationTimestamps.withoutTimestamps(attestation, attestationIri), attestationIri);
         problems.addAll(sig.problems());
-        if ( expectedKey.isPresent() && sig.verificationMethod() != null
-             && !sig.verificationMethod().startsWith(expectedKey.get() + "#") )
-            problems.add("Signed by " + sig.verificationMethod() + ", expected " + expectedKey.get());
+        if ( !trustedKeys.isEmpty() && sig.verificationMethod() != null
+             && trustedKeys.stream().noneMatch(k -> sig.verificationMethod().startsWith(k + "#")) )
+            problems.add("Signed by " + sig.verificationMethod() + ", which is not "
+                         + (trustedKeys.size() == 1 ? "the expected key " + trustedKeys.iterator().next() : "one of the " + trustedKeys.size() + " trusted keys"));
 
         // 1b. RFC 3161 timestamps over the signature
         List<AttestationTimestamps.Check> timestamps = AttestationTimestamps.verify(attestation, attestationIri, options.tsaTrustAnchors());

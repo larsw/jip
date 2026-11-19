@@ -147,9 +147,18 @@ class FusekiIntegrationTest {
         Graph certGraph = GraphMemFactory.createDefaultGraph();
         RDFParser.fromString(certRes.body(), Lang.TURTLE).parse(certGraph);
 
-        JsonObject key = JSON.parse(send(HttpRequest.newBuilder(URI.create(base + "/$/provenance/key"))).body());
-        String didKey = key.get("id").getAsString().value();
+        // The signing keys, as a JWK Set: the current key first.
+        HttpResponse<String> keysRes = send(HttpRequest.newBuilder(URI.create(base + "/$/provenance/keys")));
+        assertEquals(200, keysRes.statusCode(), keysRes.body());
+        assertTrue(keysRes.headers().firstValue("Content-Type").orElse("").startsWith("application/jwk-set+json"));
+        JsonObject key = JSON.parse(keysRes.body()).get("keys").getAsArray().get(0).getAsObject();
+        String didKey = key.get("did").getAsString().value();
         assertTrue(didKey.startsWith("did:key:z6Mk"));
+        assertEquals("current", key.get("status").getAsString().value());
+        assertEquals("OKP", key.get("kty").getAsString().value());
+        assertEquals("EdDSA", key.get("alg").getAsString().value());
+        assertEquals(java.util.Set.of(didKey), xyz.larsw.jip.attestation.TrustedKeys.fromJwkSet(keysRes.body()));
+        assertEquals(404, send(HttpRequest.newBuilder(URI.create(base + "/$/provenance/key"))).statusCode(), "no /key any more");
 
         AttestationVerifier.Report report = AttestationVerifier.verify(certGraph, vars, bindings, Optional.of(didKey));
         assertTrue(report.valid(), () -> report.problems().toString());

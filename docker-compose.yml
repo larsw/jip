@@ -35,6 +35,9 @@ services:
       # volume (PROVENANCE_SIGNING_KEY) instead.
       PROVENANCE_SIGNER: "${JIP_SIGNER:-pkcs11}"
       PROVENANCE_PKCS11_PIN: "${JIP_PKCS11_PIN:-jip-demo-pin}"
+      # The signing key's label on the token. Switching to another label is a key rollover: the
+      # old key stays in GET /$/provenance/keys as retired.
+      PROVENANCE_PKCS11_KEY: "${JIP_PKCS11_KEY:-jip-signing}"
       # Create the key on the token on first start if it isn't there: P-256 or P-384.
       PROVENANCE_PKCS11_GENERATE: "${JIP_PKCS11_CURVE:-P-256}"
       # RFC 3161 timestamp authorities, in priority order: each attestation is co-signed by the

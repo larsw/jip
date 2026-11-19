@@ -57,6 +57,10 @@ public final class JIP {
 
     /** Named graph in the attestation store listing the attestations waiting for a timestamp. */
     public static final Resource PENDING_TIMESTAMPS = resource("pendingTimestamps");
+    /** Named graph in the attestation store recording every signing key the server has used. */
+    public static final Resource SIGNING_KEYS = resource("signingKeys");
+    /** In {@link #SIGNING_KEYS}: when a key (its did:key) became the signing key. */
+    public static final Property activatedAt = property("activatedAt");
     /** In {@link #PENDING_TIMESTAMPS}: when an attestation started waiting for its timestamp. */
     public static final Property timestampPendingSince = property("timestampPendingSince");
 

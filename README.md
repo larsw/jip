@@ -68,6 +68,9 @@ It also checks RFC 3161 timestamps on the attestation. `--tsa-trust` says what t
 certificate must chain to: `system` (the JVM trust store, the default), a PEM file of CA
 certificates, or `none` to skip the chain check. An untrusted timestamp is reported but only
 fails verification with `--require-timestamp`.
+`--expect-key` can be given more than once. To accept any key the server has signed with, pass
+its key set instead: `curl -fsS http://localhost:3030/\$/provenance/keys > keys.json` and
+`--trusted-keys /data/keys.json` (see [Key rollover](#key-rollover)).
 Without Docker, run the standalone jar the build produces:
 
 ```bash
@@ -181,10 +184,38 @@ P-256). `JIP_SIGNER=local` switches to a key file. SoftHSM2 keeps keys in files,
 for an HSM here; in production, point `PROVENANCE_PKCS11_LIBRARY` (or the signer's
 `p11-kit server`) at the HSM's module.
 
+### Key rollover
+
+`GET /$/provenance/keys` returns the signing keys as a JWK Set (RFC 7517,
+`application/jwk-set+json`): the current key first, then every key used before it, most recent
+first. The attestation store records each key the server signs with (graph
+`<https://larsw.xyz/jip/signingKeys>`, `<did:key:…> jip:activatedAt "…"^^xsd:dateTime`), so
+after a rollover the old key is still listed and the attestations it signed still verify.
+Besides the standard members (`kty`, `crv`, `x`, `y`, `alg`, `use`, and `kid`, the `did:key`
+verification method that the attestations name), each key has `did`, `status` (`current` or
+`retired`), `activated`, and for a retired key `retired`:
+
+```json
+{ "keys": [
+  { "kty": "EC", "crv": "P-256", "x": "…", "y": "…", "kid": "did:key:zDnaeX…#zDnaeX…", "alg": "ES256",
+    "use": "sig", "did": "did:key:zDnaeX…", "status": "current", "activated": "2026-11-19T10:02:41Z" },
+  { "kty": "EC", "crv": "P-256", "x": "…", "y": "…", "kid": "did:key:zDnaeT…#zDnaeT…", "alg": "ES256",
+    "use": "sig", "did": "did:key:zDnaeT…", "status": "retired", "activated": "2026-11-19T10:01:12Z",
+    "retired": "2026-11-19T10:02:41Z" } ] }
+```
+
+To roll over, point the server at a new key and restart it: another `PROVENANCE_PKCS11_KEY`
+label (with `PROVENANCE_PKCS11_GENERATE` the key is created on the token), or another
+`PROVENANCE_SIGNING_KEY` file. In Docker Compose: `JIP_PKCS11_KEY=jip-signing-2 docker compose up -d`.
+Switching back to an earlier key makes it current again. The verifier's `--trusted-keys` reads
+the set and trusts the keys by their key material (the `kid` is not trusted). It does not check
+that an attestation was made before its key was retired: the proof's `created` time is the
+server's own claim, and an RFC 3161 timestamp can land after a rollover.
+
 ### Timestamps (RFC 3161)
 
 Optionally, a time-stamping authority co-signs every attestation. The TSA signs SHA-256 of the
-attestation's Ed25519 signature, so the token proves the attestation existed at the TSA's time
+attestation's signature, so the token proves the attestation existed at the TSA's time
 and does not depend on the server clock. The token is stored in the attestation as a
 `jip:timestamp` node, outside the signed document (see [`docs/DESIGN.md`](docs/DESIGN.md#timestamps-rfc-3161)).
 
@@ -212,7 +243,7 @@ a pending attestation already, without its timestamp; the graph
 | Endpoint | Returns |
 |---|---|
 | `GET /$/provenance/attestation/{uuid}` | The attestation as Turtle, JSON-LD, N-Triples, N-Quads, or RDF/XML; `202 Accepted` + `Retry-After` while its timestamp is pending |
-| `GET /$/provenance/key` | The public key as a `did:key`, multibase, JWK, and PEM, with its key type, cryptosuite, and signer |
+| `GET /$/provenance/keys` | The signing keys, current and retired, as a JWK Set (`application/jwk-set+json`) |
 | `GET /$/provenance/version/{dataset}` | The persistent and internal data versions |
 
 ## Building

@@ -30,6 +30,7 @@ import xyz.larsw.jip.attestation.AttestationBuilder;
 import xyz.larsw.jip.attestation.AttestationStore;
 import xyz.larsw.jip.attestation.ProvenanceKeys;
 import xyz.larsw.jip.attestation.ProvenanceSigner;
+import xyz.larsw.jip.attestation.KeyHistory;
 import xyz.larsw.jip.attestation.TimestampAuthorities;
 import xyz.larsw.jip.version.DataVersion;
 import xyz.larsw.jip.version.DataVersionComponent;
@@ -40,8 +41,7 @@ import xyz.larsw.jip.version.DataVersionComponent;
  * <li>{@code GET attestation/{uuid}}: a stored attestation (Turtle, JSON-LD, N-Triples, N-Quads
  * or RDF/XML by content negotiation; {@code ?format=ttl|jsonld|nt|nq} overrides). While its RFC 3161
  * timestamp is still being fetched: {@code 202 Accepted} with {@code Retry-After} and a JSON status.</li>
- * <li>{@code GET key}: the signing key as did:key, publicKeyMultibase, JWK and PEM, with its key
- * type, cryptosuite and signer kind.</li>
+ * <li>{@code GET keys}: the current and retired signing keys as a JWK Set (RFC 7517).</li>
  * <li>{@code GET version/{dataset}}: the persistent and TDB2-internal data versions.</li>
  * </ul>
  */
@@ -59,8 +59,8 @@ public class ProvenanceServlet extends HttpServlet {
         try {
             if ( path.startsWith("/attestation/") )
                 attestation(path.substring("/attestation/".length()), req, resp);
-            else if ( path.equals("/key") )
-                key(resp);
+            else if ( path.equals("/keys") )
+                keys(resp);
             else if ( path.startsWith("/version/") )
                 version(path.substring("/version/".length()), resp);
             else
@@ -142,19 +142,23 @@ public class ProvenanceServlet extends HttpServlet {
         return lang == null ? Lang.TURTLE : lang;
     }
 
-    private void key(HttpServletResponse resp) throws IOException {
-        ProvenanceSigner key = ProvenanceKeys.get();
-        JsonObject obj = new JsonObject();
-        obj.put("id", key.didKey());
-        obj.put("verificationMethod", key.verificationMethod());
-        obj.put("type", "Multikey");
-        obj.put("publicKeyMultibase", key.publicKeyMultibase());
-        obj.put("publicKeyJwk", org.apache.jena.atlas.json.JSON.parse(key.jwk()));
-        obj.put("publicKeyPem", key.publicPem());
-        obj.put("keyType", key.keyType().curveName());
-        obj.put("cryptosuite", key.keyType().cryptosuite());
-        obj.put("signer", key.kind());
-        json(resp, obj);
+    /** The current and retired signing keys as a JWK Set ({@link KeyHistory}). */
+    private void keys(HttpServletResponse resp) throws IOException {
+        ProvenanceSigner signer = ProvenanceKeys.get();
+        java.util.Map<String, java.util.List<java.time.Instant>> history = java.util.Map.of();
+        if ( AttestationStore.isConfigured(ARQ.getContext()) ) {
+            AttestationStore store = AttestationStore.fromContext(ARQ.getContext());
+            KeyHistory.recordActivation(store, signer);
+            history = store.keyActivations();
+        }
+        byte[] bytes = (KeyHistory.jwkSet(signer.didKey(), history).toString() + "\n").getBytes(StandardCharsets.UTF_8);
+        resp.setStatus(HttpServletResponse.SC_OK);
+        resp.setContentType(KeyHistory.MEDIA_TYPE);
+        resp.setCharacterEncoding("UTF-8");
+        resp.setContentLength(bytes.length);
+        try ( OutputStream out = resp.getOutputStream() ) {
+            out.write(bytes);
+        }
     }
 
     private void version(String datasetName, HttpServletResponse resp) throws IOException {

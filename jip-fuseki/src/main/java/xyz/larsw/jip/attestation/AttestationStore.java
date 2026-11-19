@@ -2,8 +2,11 @@ package xyz.larsw.jip.attestation;
 
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -55,6 +58,19 @@ public interface AttestationStore {
     /** All attestations waiting for a timestamp. */
     List<Node> pending();
 
+    /**
+     * Record that the key {@code didKey} became the signing key at {@code at}, unless it already
+     * is the most recently activated key. The history lives in the graph
+     * {@link JIP#SIGNING_KEYS} as {@code <did:key:...> jip:activatedAt "..."^^xsd:dateTime}, one
+     * value per activation.
+     *
+     * @return whether an activation was recorded
+     */
+    boolean recordKeyActivation(String didKey, Instant at);
+
+    /** Every key ever activated, with its activation times in ascending order. */
+    Map<String, List<Instant>> keyActivations();
+
     /** A store over a transactional dataset (normally TDB2). */
     static AttestationStore over(DatasetGraph dsg) {
         if ( DataVersion.find(dsg).isPresent() )
@@ -93,6 +109,8 @@ public interface AttestationStore {
         private static final Map<String, AttestationStore> byLocation = new ConcurrentHashMap<>();
         private static final Node PENDING = JIP.PENDING_TIMESTAMPS.asNode();
         private static final Node SINCE = JIP.timestampPendingSince.asNode();
+        private static final Node KEYS = JIP.SIGNING_KEYS.asNode();
+        private static final Node ACTIVATED = JIP.activatedAt.asNode();
         private final DatasetGraph dsg;
 
         private DatasetAttestationStore(DatasetGraph dsg) {
@@ -159,6 +177,50 @@ public interface AttestationStore {
                     return Optional.of(Instant.EPOCH);
                 }
             });
+        }
+
+        @Override
+        public boolean recordKeyActivation(String didKey, Instant at) {
+            Node key = NodeFactory.createURI(didKey);
+            Node time = NodeFactory.createLiteralDT(DateTimeFormatter.ISO_INSTANT.format(at), XSDDatatype.XSDdateTime);
+            return Txn.calculateWrite(dsg, () -> {
+                String latest = null;
+                Instant latestAt = null;
+                for ( var it = dsg.find(KEYS, Node.ANY, ACTIVATED, Node.ANY) ; it.hasNext() ; ) {
+                    Quad q = it.next();
+                    Instant t = instant(q.getObject());
+                    if ( t != null && (latestAt == null || t.isAfter(latestAt)) ) {
+                        latestAt = t;
+                        latest = q.getSubject().getURI();
+                    }
+                }
+                if ( didKey.equals(latest) )
+                    return false;
+                dsg.add(KEYS, key, ACTIVATED, time);
+                return true;
+            });
+        }
+
+        @Override
+        public Map<String, List<Instant>> keyActivations() {
+            return Txn.calculateRead(dsg, () -> {
+                Map<String, List<Instant>> out = new TreeMap<>();
+                dsg.stream(KEYS, Node.ANY, ACTIVATED, Node.ANY).forEach(q -> {
+                    Instant t = instant(q.getObject());
+                    if ( t != null && q.getSubject().isURI() )
+                        out.computeIfAbsent(q.getSubject().getURI(), k -> new ArrayList<>()).add(t);
+                });
+                out.values().forEach(Collections::sort);
+                return out;
+            });
+        }
+
+        private static Instant instant(Node n) {
+            try {
+                return n.isLiteral() ? Instant.parse(n.getLiteralLexicalForm()) : null;
+            } catch (RuntimeException ex) {
+                return null;
+            }
         }
 
         @Override

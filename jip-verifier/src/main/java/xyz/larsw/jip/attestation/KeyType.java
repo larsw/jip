@@ -70,6 +70,15 @@ public enum KeyType {
         return jcaCurve;
     }
 
+    /** The JWS algorithm name for JWKs (RFC 7518, RFC 8037): "EdDSA", "ES256" or "ES384". */
+    public String jwsAlgorithm() {
+        return switch (this) {
+            case ED25519 -> "EdDSA";
+            case P256 -> "ES256";
+            case P384 -> "ES384";
+        };
+    }
+
     public boolean isEcdsa() {
         return jcaCurve != null;
     }
