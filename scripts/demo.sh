@@ -29,7 +29,7 @@ export JIP_TSA_URLS="$TSA_URLS"
 
 cd "$(dirname "$0")/.."
 BASE=http://localhost:${JIP_PORT:-3030}
-IMAGE=jena-intrinsic-provenance:0.14.0
+IMAGE=jena-intrinsic-provenance:0.15.0
 OUT="$PWD/demo-out"
 mkdir -p "$OUT"
 
