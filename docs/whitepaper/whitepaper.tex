@@ -896,7 +896,7 @@ interface, \code{CertificateStore}, so a file-based or remote store could replac
 The verifier needs only the saved results and the certificate. Its checks are in a library,
 \file{jip-verifier}, which depends on \code{jena-arq} and titanium-rdfc but not on TDB2, Fuseki
 or the signing key, so other Java programs can verify certificates themselves. A command,
-\longcode{org.example.jena.provenance.cli.Verify}, wraps the library; it is packaged as a
+\longcode{xyz.larsw.jip.cli.Verify}, wraps the library; it is packaged as a
 self-contained jar, and the Docker image runs it with the command \code{verify}. The
 verification works in four steps:
 

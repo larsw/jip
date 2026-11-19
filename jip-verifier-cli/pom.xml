@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
-    <groupId>org.example.jena</groupId>
+    <groupId>xyz.larsw</groupId>
     <artifactId>jena-intrinsic-provenance-parent</artifactId>
     <version>0.10.0-SNAPSHOT</version>
   </parent>
@@ -20,12 +20,12 @@
   </description>
 
   <properties>
-    <main.class>org.example.jena.provenance.cli.Verify</main.class>
+    <main.class>xyz.larsw.jip.cli.Verify</main.class>
   </properties>
 
   <dependencies>
     <dependency>
-      <groupId>org.example.jena</groupId>
+      <groupId>xyz.larsw</groupId>
       <artifactId>jip-verifier</artifactId>
     </dependency>
     <!-- Jena logs through SLF4J; the CLI reports on stdout/stderr itself. -->

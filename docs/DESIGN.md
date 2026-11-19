@@ -191,7 +191,7 @@ Only the digest of the rows is stored, never the rows themselves.
 ## 4. Verification
 
 Verification lives in the `jip-verifier` library (`CertificateVerifier`), which needs only
-`jena-arq` and titanium-rdfc. The CLI `org.example.jena.provenance.cli.Verify`
+`jena-arq` and titanium-rdfc. The CLI `xyz.larsw.jip.cli.Verify`
 (module `jip-verifier-cli`, packaged as the self-contained `jip-verify.jar`) parses
 arguments, calls the library and prints the report. Together they work as follows:
 
@@ -210,8 +210,8 @@ counter persisted.
 
 ## 5. Packaging
 
-- **Build:** a Maven parent with three modules, all `org.example.jena:*:0.10.0-SNAPSHOT`, all in
-  the package `org.example.jena.provenance`:
+- **Build:** a Maven parent with three modules, all `xyz.larsw:*:0.10.0-SNAPSHOT`, all in
+  the package `xyz.larsw.jip`:
   - `jip-verifier`: canonicalization, the `rs:` encoding, Data Integrity proofs
     (`DataIntegrityProof`, signing through the `ProofSigner` interface), `did:key`
     (`DidKey`), the certificate vocabulary (`Vocab`, which also holds the namespace) and

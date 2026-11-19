@@ -56,7 +56,7 @@ Without Docker, run the standalone jar the build produces:
 java -jar jip-verifier-cli/target/jip-verify.jar -r results.srj -c certificate.ttl -k did:key:z6Mk…
 ```
 
-To verify from your own Java code, depend on `org.example.jena:jip-verifier`. It needs only
+To verify from your own Java code, depend on `xyz.larsw:jip-verifier`. It needs only
 `jena-arq`, not TDB2 or Fuseki:
 
 ```java
@@ -139,19 +139,18 @@ To use the module with your own Fuseki 6.2.0, put `jena-intrinsic-provenance.jar
 - The proof is stored as RDF triples, so JSON-LD Verifiable Credential tools may not accept it.
 - A refused certification (no version, too many rows, inside a write transaction) is reported
   as HTTP 500.
-- The Maven coordinates (`org.example.jena:*`) are placeholders.
 
 ## Layout
 
 ```
 pom.xml             parent (jena-intrinsic-provenance-parent)
 jip-verifier/       verifier library; depends on jena-arq and titanium-rdfc only
-  src/main/java/org/example/jena/provenance/
+  src/main/java/xyz/larsw/jip/
     canon/    RDFC-1.0 adapter and the result-set encoding
     cert/     CertificateVerifier, Data Integrity proofs, did:key, vocabulary terms
 jip-verifier-cli/   the offline verifier command (cli/Verify), packaged as jip-verify.jar
 jip-fuseki/         the Fuseki module (artifact jena-intrinsic-provenance); uses jip-verifier
-  src/main/java/org/example/jena/provenance/
+  src/main/java/xyz/larsw/jip/
     version/  persistent data version (transaction component, journal recovery, assembler)
     cert/     certificate builder, signing key, key handling, store
     service/  the certify SERVICE executor
