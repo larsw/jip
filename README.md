@@ -9,7 +9,9 @@ A proof of concept for Apache Jena and Fuseki 6.2.0 (Java 21). It adds two thing
   certificate is a PROV-O graph that records the data version the rows were read from and a
   digest of the rows, computed with RDF Dataset Canonicalization
   ([RDFC-1.0](https://www.w3.org/TR/rdf-canon/)). It is signed with the W3C Data Integrity
-  cryptosuite `eddsa-rdfc-2022` and can be co-signed by an RFC 3161 timestamp authority (TSA).
+  cryptosuite `ecdsa-rdfc-2019` (P-256 or P-384 key on a PKCS#11 token, by default in a
+  separate signer process) or `eddsa-rdfc-2022` (Ed25519 key file, opt-in), and can be co-signed
+  by an RFC 3161 timestamp authority (TSA).
 
 The whitepaper in [`docs/whitepaper/`](docs/whitepaper/) explains the findings, the design,
 and the measurements; `scripts/build-whitepaper.sh` builds the PDF.
@@ -110,10 +112,45 @@ separate TDB2 location for the certificates (see [`docker/config.ttl`](docker/co
     jip:datasetIRI <https://example.org/datasets/ds> .   # optional
 ```
 
-The signing key is an Ed25519 PKCS#8 PEM file. Its path comes from the `PROVENANCE_SIGNING_KEY`
-environment variable or the `jip.signingKey` system property, and defaults to
-`$FUSEKI_BASE/provenance/signing-key.pem`. If the file doesn't exist, the server creates a key
-on first start.
+### Signing
+
+The signer is chosen with `PROVENANCE_SIGNER` (or the system property `jip.signer`):
+
+- **`pkcs11` (default)**: an ECDSA P-256 or P-384 key on a PKCS#11 token, used through the
+  JDK's SunPKCS11 provider; certificates use the cryptosuite `ecdsa-rdfc-2019`. The private key
+  never enters the Fuseki process: every signature is a `C_Sign` call into the token. The
+  PKCS#11 module can be an HSM vendor's library, SoftHSM, or `p11-kit-client.so`, which
+  forwards the calls over a Unix socket to a `p11-kit server` in another process.
+- **`local` (opt-in)**: an Ed25519 key in a PKCS#8 PEM file, `eddsa-rdfc-2022`. The path comes
+  from `PROVENANCE_SIGNING_KEY` (or `jip.signingKey`) and defaults to
+  `$FUSEKI_BASE/provenance/signing-key.pem`; a key is created on first start if the file is
+  missing.
+
+| PKCS#11 setting (environment / system property) | Value |
+|---|---|
+| `PROVENANCE_PKCS11_LIBRARY` / `jip.pkcs11.library` | The PKCS#11 module (required, unless a config file is given) |
+| `PROVENANCE_PKCS11_SLOT_INDEX` / `jip.pkcs11.slotIndex` | Index in the module's slot list (default 0) |
+| `PROVENANCE_PKCS11_CONFIG` / `jip.pkcs11.config` | A SunPKCS11 configuration file, instead of the two above |
+| `PROVENANCE_PKCS11_PIN`, `PROVENANCE_PKCS11_PIN_FILE` | The user PIN, directly or in a file (Docker secrets) |
+| `PROVENANCE_PKCS11_KEY` / `jip.pkcs11.key` | The key's label (default `jip-signing`) |
+| `PROVENANCE_PKCS11_GENERATE` / `jip.pkcs11.generate` | `P-256` or `P-384`: create the key on the token if it is missing |
+
+A key created by the module gets a self-signed certificate next to it, because the JDK's PKCS#11
+key store only lists private keys that have one. A key you create yourself needs one too, with
+the same `CKA_ID`. Java 21's SunPKCS11 can't use Ed25519 keys, so PKCS#11 keys are ECDSA. If a
+signature fails because the token connection was lost (the signer process restarted), the module
+reconnects once and retries.
+
+Other mechanisms (a cloud KMS, a remote signing service) can be added as a `SignerProvider`,
+registered with `ServiceLoader`, and selected by name.
+
+In Docker Compose, the `signer` service is a SoftHSM2 token served by `p11-kit server` on a
+socket in a shared volume, with no network. The Fuseki image loads `/opt/jip/p11-kit-client.so`
+(`P11_KIT_SERVER_ADDRESS=unix:path=/run/jip-signer/pkcs11.sock`). On first start the signer
+initializes its token, and the module creates the key on it (`JIP_PKCS11_CURVE`, default
+P-256). `JIP_SIGNER=local` switches to a key file. SoftHSM2 keeps keys in files, so it stands in
+for an HSM here; in production, point `PROVENANCE_PKCS11_LIBRARY` (or the signer's
+`p11-kit server`) at the HSM's module.
 
 ### Timestamps (RFC 3161)
 
@@ -146,7 +183,7 @@ a pending certificate already, without its timestamp; the graph
 | Endpoint | Returns |
 |---|---|
 | `GET /$/provenance/certificate/{uuid}` | The certificate as Turtle, JSON-LD, N-Triples, N-Quads, or RDF/XML; `202 Accepted` + `Retry-After` while its timestamp is pending |
-| `GET /$/provenance/key` | The public key as a `did:key`, multibase, JWK, and PEM |
+| `GET /$/provenance/key` | The public key as a `did:key`, multibase, JWK, and PEM, with its key type, cryptosuite, and signer |
 | `GET /$/provenance/version/{dataset}` | The persistent and internal data versions |
 
 ## Building
@@ -178,6 +215,9 @@ To use the module with your own Fuseki 6.2.0, put `jena-intrinsic-provenance.jar
   requests run one at a time in the background, so a burst of certificates queues up and stays
   at 202 longer. Public TSAs rate-limit, so use your own or a contracted TSA for real loads.
 - The proof is stored as RDF triples, so JSON-LD Verifiable Credential tools may not accept it.
+- With the PKCS#11 signer the PIN is in the Fuseki process: the key can't be extracted, but a
+  compromised server can still have the token sign. SoftHSM2 in the Docker setup keeps its
+  keys in files; use an HSM for real keys.
 - A refused certification (no version, too many rows, inside a write transaction) is reported
   as HTTP 500.
 
@@ -188,16 +228,16 @@ pom.xml             parent (jena-intrinsic-provenance-parent)
 jip-verifier/       verifier library; depends on jena-arq, titanium-rdfc and BouncyCastle
   src/main/java/xyz/larsw/jip/
     canon/    RDFC-1.0 adapter and the result-set encoding
-    cert/     CertificateVerifier, Data Integrity proofs, did:key, RFC 3161 tokens, vocabulary terms
+    cert/     CertificateVerifier, Data Integrity proofs (EdDSA, ECDSA), did:key, RFC 3161 tokens, vocabulary terms
 jip-verifier-cli/   the offline verifier command (cli/Verify), packaged as jip-verify.jar
 jip-fuseki/         the Fuseki module (artifact jena-intrinsic-provenance); uses jip-verifier
   src/main/java/xyz/larsw/jip/
     version/  persistent data version (transaction component, journal recovery, assembler)
-    cert/     certificate builder, signing key, key handling, store, TSA client
+    cert/     certificate builder, signers (PKCS#11, local key file), store, TSA client
     service/  the certify SERVICE executor
     function/ jip:dataVersion(), jip:tdbDataVersion()
     fuseki/   Fuseki module, HTTP endpoints, header filter
-docker/       Dockerfile, Fuseki configuration, shiro.ini, entrypoint
+docker/       Dockerfile, Fuseki configuration, shiro.ini, entrypoint; signer/ (SoftHSM2 + p11-kit server)
 docs/         design notes and the whitepaper
 vocab/        jip.ttl, the jip: vocabulary (RDFS/OWL)
 scripts/      demo, whitepaper build, vocabulary site build

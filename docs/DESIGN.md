@@ -153,20 +153,26 @@ _:Si rs:binding _:B .  _:B rs:variable "v" ; rs:value <term> .   # bound vars on
 
 Only the digest of the rows is stored, never the rows themselves.
 
-### Signature: W3C Data Integrity `eddsa-rdfc-2022`, applied at the RDF level
+### Signature: W3C Data Integrity, applied at the RDF level
 
-- **Proof node:** `_:proof a sec:DataIntegrityProof ; sec:cryptosuite "eddsa-rdfc-2022" ;
-  sec:verificationMethod <did:key:z6Mk…#z6Mk…> ; sec:proofPurpose sec:assertionMethod ;
+- **Cryptosuites:** `ecdsa-rdfc-2019` (vc-di-ecdsa) for P-256 and P-384 keys, the default
+  through PKCS#11, and `eddsa-rdfc-2022` (vc-di-eddsa) for Ed25519 keys, the local key file.
+  The key type selects the cryptosuite and the hash: SHA-256 for Ed25519 and P-256, SHA-384 for
+  P-384. The verifier accepts both and checks that the cryptosuite matches the `did:key`'s type.
+- **Proof node:** `_:proof a sec:DataIntegrityProof ; sec:cryptosuite "ecdsa-rdfc-2019" ;
+  sec:verificationMethod <did:key:zDn…#zDn…> ; sec:proofPurpose sec:assertionMethod ;
   dcterms:created … ; sec:proofValue "z…"`.
 - **Unsecured document:** the certificate graph without the proof triples and
   without `<C> sec:proof _:proof`.
 - **Proof config:** the proof node triples without `sec:proofValue`.
-- **Signature:** `Ed25519(SHA-256(canon(proofConfig)) ‖ SHA-256(canon(document)))`,
-  encoded as multibase base58btc.
+- **Signature:** over `H(canon(proofConfig)) ‖ H(canon(document))`: Ed25519, or ECDSA with
+  SHA-256 / SHA-384 in IEEE P1363 form (`r ‖ s`), encoded as multibase base58btc.
 - **Deviation from VC JSON-LD:** the proof is embedded as plain triples, not as a
   JSON-LD `@graph` container. Interoperability with JSON-LD verifiers is best effort.
 - **Test:** the vc-di-eddsa test vectors (fixed key, canonical forms, expected
-  `proofValue`).
+  `proofValue`) and the vc-di-ecdsa `ecdsa-rdfc-2019` vectors for P-256 and P-384 (key pairs,
+  canonical forms, hashes; ECDSA signatures are randomized, so the vector signature is verified
+  and signing is checked by a round trip with the vector key).
 
 ### Timestamps (RFC 3161)
 
@@ -243,13 +249,33 @@ is out of scope" risk.
 
 ### Signing key
 
-- The key is an Ed25519 PKCS#8 PEM. Its path comes from `PROVENANCE_SIGNING_KEY`
-  (env), `jip.signingKey` (system property), or the default
-  `$FUSEKI_BASE/provenance/signing-key.pem`.
-- If the file is missing, a key is generated once and written with mode 600.
-- It is published as a `did:key`, which embeds the public key, so certificates
-  verify offline. `GET /$/provenance/key` returns it as a `did:key`, a
-  `publicKeyMultibase`, a JWK and a PEM.
+- **Pluggable.** A `SignerProvider` (found with `ServiceLoader`, chosen by `PROVENANCE_SIGNER`
+  / `jip.signer`) opens a `ProvenanceSigner`: a key type, a public key and a `sign(hashData)`.
+  Built in: `pkcs11` (default) and `local`.
+- **`pkcs11`.** An ECDSA P-256 or P-384 key on a PKCS#11 token, through the JDK's SunPKCS11
+  provider: `C_Sign` with `SHA256withECDSAinP1363Format` / `SHA384withECDSAinP1363Format`. The
+  private key stays on the token; the module holds only a handle. Settings: the module
+  (`PROVENANCE_PKCS11_LIBRARY`), slot index, or a SunPKCS11 config file, the PIN (directly or
+  from a file), the key label (`jip-signing`), and optionally `PROVENANCE_PKCS11_GENERATE` to
+  create the key pair on the token, with a self-signed certificate, if it is missing.
+  SunPKCS11's key store only lists private keys with a certificate of the same `CKA_ID`. On a
+  signing failure the module reconnects once (a new SunPKCS11 instance) and retries, so a
+  restarted signer process doesn't need a Fuseki restart.
+- **Why ECDSA for PKCS#11.** Java 21's SunPKCS11 has no EdDSA support, and EdDSA support in
+  tokens varies (SoftHSM2 needs a build with EdDSA enabled; see SoftHSMv2 issue 704). P-256 is
+  supported by essentially every token, and `ecdsa-rdfc-2019` is the W3C counterpart of
+  `eddsa-rdfc-2022`.
+- **Process separation.** With `p11-kit-client.so` as the module, every PKCS#11 call goes over
+  a Unix socket to `p11-kit server` in another process, which loads the real module. The Docker
+  setup runs that as its own container (`signer`: SoftHSM2 + `p11-kit server`, no network);
+  Fuseki and the signer share only the socket volume, and run with the same uid.
+- **`local`.** An Ed25519 PKCS#8 PEM. Its path comes from `PROVENANCE_SIGNING_KEY` (env),
+  `jip.signingKey` (system property), or the default `$FUSEKI_BASE/provenance/signing-key.pem`.
+  If the file is missing, a key is generated once and written with mode 600.
+- **Publication.** The key is published as a `did:key` (`zDn…` P-256, `z82…` P-384, `z6Mk…`
+  Ed25519), which embeds the public key, so certificates verify offline.
+  `GET /$/provenance/key` returns it as a `did:key`, a `publicKeyMultibase`, a JWK and a PEM,
+  with its key type, cryptosuite and signer kind.
 
 ### Certificate store
 
@@ -294,7 +320,7 @@ counter persisted.
   - `jip-verifier-cli`: the `Verify` command, shaded with all its dependencies into
     `jip-verify.jar`.
   - `jena-intrinsic-provenance` (directory `jip-fuseki`): the data version, the certify
-    SERVICE, the certificate store, `SigningKey` (a `ProofSigner`), the TSA client
+    SERVICE, the certificate store, the signers (`Pkcs11Signer`, `SigningKey`), the TSA client
     (`TimestampAuthorities`) and the Fuseki module. Jena is `provided`; `jip-verifier`,
     titanium-rdfc, `bcpkix` and `bcutil` are shaded into the jar, so Fuseki still loads one jar.
 - **Registration:** a `JenaSubsystemLifecycle` registers the assembler, the
@@ -303,7 +329,10 @@ counter persisted.
 - **Docker:** a multi-stage build (`maven:3.9-eclipse-temurin-21` → `eclipse-temurin:21-jre`).
   `jena-fuseki-server-6.2.0.jar` is downloaded from Maven Central and checked
   against a pinned SHA-256. The container runs as a non-root user, with one
-  `/fuseki` volume and port 3030.
+  `/fuseki` volume and port 3030. The build stage installs SoftHSM2 so the PKCS#11 tests run on
+  a real token; the runtime image adds `p11-kit-client.so`. A second image, `docker/signer`
+  (Ubuntu 24.04, SoftHSM2, `p11-kit server`), holds the token; Compose connects the two through
+  a socket volume and gives the signer no network.
 
 ## 6. Accepted risks
 
@@ -317,6 +346,9 @@ counter persisted.
   and their 202 phase gets longer; in sync mode the request runs while the query waits.
 - If one request touches several versioned datasets, the headers report the last
   one that was observed.
+- The PKCS#11 PIN is in the Fuseki process. The key can't be extracted, but a compromised
+  Fuseki process can still have the token sign anything. The p11-kit client/server forwarding is
+  Linux-only, and SoftHSM2 stores keys in files: it stands in for an HSM.
 
 ## 7. Implementation notes
 

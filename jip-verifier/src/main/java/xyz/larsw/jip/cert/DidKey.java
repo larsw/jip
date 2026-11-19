@@ -10,22 +10,137 @@ import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
 
 import org.bouncycastle.asn1.ASN1Encoding;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
+import org.bouncycastle.asn1.x9.ECNamedCurveTable;
+import org.bouncycastle.asn1.x9.X9ECParameters;
+import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 
 /**
- * Ed25519 public keys as {@code did:key} identifiers (https://w3c-ccg.github.io/did-key-spec/),
- * and Ed25519 signature verification with such a key.
+ * Public keys as {@code did:key} identifiers (https://w3c-ccg.github.io/did-key-spec/), and
+ * signature verification with such a key. Supported key types are those of {@link KeyType}:
  * <ul>
- * <li>{@code publicKeyMultibase}: {@code z} + base58btc(multicodec ed25519-pub + raw key), the
+ * <li>Ed25519: {@code z} + base58btc(multicodec ed25519-pub {@code 0xed} + raw key), the
  * {@code z6Mk...} form.</li>
- * <li>{@code did:key:z6Mk...}: the DID.</li>
- * <li>{@code did:key:z6Mk...#z6Mk...}: the verification method named in proofs.</li>
+ * <li>P-256 / P-384: {@code z} + base58btc(multicodec p256-pub {@code 0x1200} /
+ * p384-pub {@code 0x1201} + compressed point), the {@code zDn...} / {@code z82...} forms.</li>
  * </ul>
+ * {@code did:key:<multibase>} is the DID, {@code did:key:<multibase>#<multibase>} the
+ * verification method named in proofs.
  */
 public final class DidKey {
     private DidKey() {}
+
+    /** A public key named by a did:key. */
+    public record Key(KeyType type, PublicKey publicKey) {}
+
+    /**
+     * The public key of a {@code did:key} or a {@code did:key} verification method, of any
+     * supported type.
+     *
+     * @throws IllegalArgumentException if it is not a did:key, the key type is not supported,
+     *         the key is malformed, or the fragment names a different key
+     */
+    public static Key resolve(String didKeyOrVerificationMethod) {
+        byte[] bytes = Base58.decodeMultibase(fingerprint(didKeyOrVerificationMethod));
+        KeyType type = KeyType.fromMulticodec(bytes)
+                .orElseThrow(() -> new IllegalArgumentException("Unsupported did:key type: " + didKeyOrVerificationMethod));
+        if ( bytes.length != 2 + type.encodedLength() )
+            throw new IllegalArgumentException("Malformed " + type.curveName() + " did:key: " + didKeyOrVerificationMethod);
+        return new Key(type, toPublicKey(type, Arrays.copyOfRange(bytes, 2, bytes.length)));
+    }
+
+    /** The key type of a JCA public key. */
+    public static KeyType keyType(PublicKey key) {
+        return encode(key).type();
+    }
+
+    /** {@code z6Mk...}, {@code zDn...} or {@code z82...} for a JCA public key. */
+    public static String publicKeyMultibase(PublicKey key) {
+        Encoded e = encode(key);
+        return Base58.encodeMultibase(concat(e.type().multicodec(), e.bytes()));
+    }
+
+    /** {@code did:key:...} for a JCA public key. */
+    public static String didKey(PublicKey key) {
+        return PREFIX + publicKeyMultibase(key);
+    }
+
+    /** {@code did:key:...#...} for a JCA public key. */
+    public static String verificationMethod(PublicKey key) {
+        String mb = publicKeyMultibase(key);
+        return PREFIX + mb + "#" + mb;
+    }
+
+    /** Verify a signature (P1363 {@code r || s} for ECDSA) over {@code data} with the key's algorithm. */
+    public static boolean verify(Key key, byte[] data, byte[] signature) {
+        try {
+            Signature sig = Signature.getInstance(key.type().signatureAlgorithm());
+            sig.initVerify(key.publicKey());
+            sig.update(data);
+            return sig.verify(signature);
+        } catch (GeneralSecurityException | IllegalArgumentException ex) {
+            return false;
+        }
+    }
+
+    /** Key type and did:key bytes (raw key or compressed point). */
+    private record Encoded(KeyType type, byte[] bytes) {}
+
+    private static Encoded encode(PublicKey key) {
+        SubjectPublicKeyInfo info;
+        try {
+            info = SubjectPublicKeyInfo.getInstance(key.getEncoded());
+        } catch (RuntimeException ex) {
+            throw new IllegalArgumentException("Unreadable public key: " + ex.getMessage(), ex);
+        }
+        ASN1ObjectIdentifier alg = info.getAlgorithm().getAlgorithm();
+        if ( EdECObjectIdentifiers.id_Ed25519.equals(alg) )
+            return new Encoded(KeyType.ED25519, checkLength(info.getPublicKeyData().getOctets()));
+        if ( X9ObjectIdentifiers.id_ecPublicKey.equals(alg) && info.getAlgorithm().getParameters() instanceof ASN1ObjectIdentifier curve ) {
+            for ( KeyType t : KeyType.values() ) {
+                if ( t.isEcdsa() && curve.equals(ECNamedCurveTable.getOID(t.jcaCurve())) ) {
+                    X9ECParameters params = ECNamedCurveTable.getByOID(curve);
+                    return new Encoded(t, params.getCurve().decodePoint(info.getPublicKeyData().getOctets()).getEncoded(true));
+                }
+            }
+        }
+        throw new IllegalArgumentException("Unsupported public key: " + key.getAlgorithm() + " " + info.getAlgorithm().getAlgorithm()
+                                           + " (supported: Ed25519, P-256, P-384)");
+    }
+
+    private static PublicKey toPublicKey(KeyType type, byte[] bytes) {
+        try {
+            byte[] spki;
+            if ( type == KeyType.ED25519 ) {
+                spki = toSpki(bytes);
+            } else {
+                X9ECParameters params = ECNamedCurveTable.getByName(type.jcaCurve());
+                byte[] uncompressed = params.getCurve().decodePoint(bytes).getEncoded(false);   // checks the point is on the curve
+                spki = new SubjectPublicKeyInfo(new AlgorithmIdentifier(X9ObjectIdentifiers.id_ecPublicKey, ECNamedCurveTable.getOID(type.jcaCurve())),
+                                                uncompressed).getEncoded(ASN1Encoding.DER);
+            }
+            return KeyFactory.getInstance(type == KeyType.ED25519 ? "Ed25519" : "EC").generatePublic(new X509EncodedKeySpec(spki));
+        } catch (IOException | GeneralSecurityException | RuntimeException ex) {
+            throw new IllegalArgumentException("Bad " + type.curveName() + " public key: " + ex.getMessage(), ex);
+        }
+    }
+
+    private static String fingerprint(String s) {
+        if ( !s.startsWith(PREFIX) )
+            throw new IllegalArgumentException("Not a did:key: " + s);
+        String fingerprint = s.substring(PREFIX.length());
+        int hash = fingerprint.indexOf('#');
+        if ( hash >= 0 ) {
+            String fragment = fingerprint.substring(hash + 1);
+            fingerprint = fingerprint.substring(0, hash);
+            if ( !fragment.equals(fingerprint) )
+                throw new IllegalArgumentException("did:key fragment does not match the key: " + s);
+        }
+        return fingerprint;
+    }
 
     private static final String PREFIX = "did:key:";
     /** multicodec ed25519-pub (0xed) as unsigned varint. */
@@ -58,17 +173,7 @@ public final class DidKey {
      */
     public static byte[] publicKey(String didKeyOrVerificationMethod) {
         String s = didKeyOrVerificationMethod;
-        if ( !s.startsWith(PREFIX) )
-            throw new IllegalArgumentException("Not a did:key: " + s);
-        String fingerprint = s.substring(PREFIX.length());
-        int hash = fingerprint.indexOf('#');
-        if ( hash >= 0 ) {
-            String fragment = fingerprint.substring(hash + 1);
-            fingerprint = fingerprint.substring(0, hash);
-            if ( !fragment.equals(fingerprint) )
-                throw new IllegalArgumentException("did:key fragment does not match the key: " + s);
-        }
-        byte[] bytes = Base58.decodeMultibase(fingerprint);
+        byte[] bytes = Base58.decodeMultibase(fingerprint(s));
         if ( bytes.length != KEY_LENGTH + 2 || bytes[0] != MULTICODEC_ED25519_PUB[0] || bytes[1] != MULTICODEC_ED25519_PUB[1] )
             throw new IllegalArgumentException("did:key is not an Ed25519 key: " + s);
         return Arrays.copyOfRange(bytes, 2, KEY_LENGTH + 2);

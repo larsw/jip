@@ -64,6 +64,7 @@ class FusekiIntegrationTest {
 
     @BeforeEach
     void start() throws Exception {
+        System.setProperty(ProvenanceKeys.PROP_SIGNER, "local");
         System.setProperty(ProvenanceKeys.PROP_KEY_FILE, tmp.resolve("keys/signing-key.pem").toString());
         ProvenanceKeys.set(null);
         String config = Files.readString(Path.of("../docker/config.ttl"))
@@ -84,6 +85,7 @@ class FusekiIntegrationTest {
         if ( server != null )
             server.stop();
         System.clearProperty(ProvenanceKeys.PROP_KEY_FILE);
+        System.clearProperty(ProvenanceKeys.PROP_SIGNER);
         ProvenanceKeys.set(null);
         TDBInternal.reset();
         DataVersion.resetForTesting();

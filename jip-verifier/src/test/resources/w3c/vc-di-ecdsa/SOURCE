@@ -1,0 +1,8 @@
+W3C Data Integrity ECDSA Cryptosuites v1.0 test vectors (ecdsa-rdfc-2019, P-256 and P-384)
+Repository: https://github.com/w3c/vc-di-ecdsa
+Commit:     59df72ca8cdb275d97eb496086fea6fac4fa7f0f
+Files:      TestVectors/p256KeyPair.json, TestVectors/p384KeyPair.json,
+            TestVectors/ecdsa-rdfc-2019-p256/*ECDSAP256.txt, proofConfigECDSAP256.json,
+            TestVectors/ecdsa-rdfc-2019-p384/*ECDSAP384.txt, proofConfigECDSAP384.json
+            (renamed: the ECDSAP256/ECDSAP384 suffix is dropped; p256/ and p384/ hold them)
+License:    LICENSE.md (W3C Software and Document License)

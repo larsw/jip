@@ -1,15 +1,41 @@
 services:
+  # The signing key, in its own process and container: a SoftHSM2 token served over a Unix
+  # socket by p11-kit server. No network; the only way in is the socket volume.
+  signer:
+    build:
+      context: .
+      dockerfile: docker/signer/Dockerfile
+    image: jip-signer:0.12.0
+    network_mode: none
+    environment:
+      # User PIN of the token, set when it is first initialized (demo value; use a secret).
+      SIGNER_PIN: "${JIP_PKCS11_PIN:-jip-demo-pin}"
+    volumes:
+      - signer-tokens:/var/lib/jip-signer
+      - signer-socket:/run/jip-signer
+
   fuseki:
     build:
       context: .
       dockerfile: docker/Dockerfile
     image: jena-intrinsic-provenance:0.12.0
+    depends_on:
+      signer:
+        condition: service_healthy
     ports:
       - "3030:3030"
     volumes:
-      # Databases (ds, provenance), the signing key and Fuseki's run area.
+      # Databases (ds, provenance) and Fuseki's run area.
       - fuseki-data:/fuseki
+      # The signer's socket; the image's p11-kit-client.so talks to it.
+      - signer-socket:/run/jip-signer
     environment:
+      # pkcs11 (default): sign on the signer's token. local: an Ed25519 key file in the fuseki
+      # volume (PROVENANCE_SIGNING_KEY) instead.
+      PROVENANCE_SIGNER: "${JIP_SIGNER:-pkcs11}"
+      PROVENANCE_PKCS11_PIN: "${JIP_PKCS11_PIN:-jip-demo-pin}"
+      # Create the key on the token on first start if it isn't there: P-256 or P-384.
+      PROVENANCE_PKCS11_GENERATE: "${JIP_PKCS11_CURVE:-P-256}"
       # RFC 3161 timestamp authorities, in priority order: each certificate is co-signed by the
       # first one that answers. Override with JIP_TSA_URLS; set it to "" to turn timestamps off.
       PROVENANCE_TSA_URLS: "${JIP_TSA_URLS-http://timestamp.digicert.com http://timestamp.sectigo.com https://freetsa.org/tsr}"
@@ -21,8 +47,8 @@ services:
       PROVENANCE_TSA_POLICY: "${JIP_TSA_POLICY:-optional}"
       # Time allowed per TSA, in milliseconds.
       PROVENANCE_TSA_TIMEOUT: "${JIP_TSA_TIMEOUT:-5000}"
-      # To use your own key: mount it and point PROVENANCE_SIGNING_KEY at it.
-      # PROVENANCE_SIGNING_KEY: /run/secrets/provenance-key.pem
 
 volumes:
   fuseki-data:
+  signer-tokens:
+  signer-socket:

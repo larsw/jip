@@ -29,7 +29,7 @@ import org.apache.jena.system.Txn;
 import xyz.larsw.jip.cert.CertificateBuilder;
 import xyz.larsw.jip.cert.CertificateStore;
 import xyz.larsw.jip.cert.ProvenanceKeys;
-import xyz.larsw.jip.cert.SigningKey;
+import xyz.larsw.jip.cert.ProvenanceSigner;
 import xyz.larsw.jip.cert.TimestampAuthorities;
 import xyz.larsw.jip.version.DataVersion;
 import xyz.larsw.jip.version.DataVersionComponent;
@@ -40,7 +40,8 @@ import xyz.larsw.jip.version.DataVersionComponent;
  * <li>{@code GET certificate/{uuid}}: a stored certificate (Turtle, JSON-LD, N-Triples, N-Quads
  * or RDF/XML by content negotiation; {@code ?format=ttl|jsonld|nt|nq} overrides). While its RFC 3161
  * timestamp is still being fetched: {@code 202 Accepted} with {@code Retry-After} and a JSON status.</li>
- * <li>{@code GET key}: the signing key as did:key, publicKeyMultibase, JWK and PEM.</li>
+ * <li>{@code GET key}: the signing key as did:key, publicKeyMultibase, JWK and PEM, with its key
+ * type, cryptosuite and signer kind.</li>
  * <li>{@code GET version/{dataset}}: the persistent and TDB2-internal data versions.</li>
  * </ul>
  */
@@ -142,7 +143,7 @@ public class ProvenanceServlet extends HttpServlet {
     }
 
     private void key(HttpServletResponse resp) throws IOException {
-        SigningKey key = ProvenanceKeys.get();
+        ProvenanceSigner key = ProvenanceKeys.get();
         JsonObject obj = new JsonObject();
         obj.put("id", key.didKey());
         obj.put("verificationMethod", key.verificationMethod());
@@ -150,6 +151,9 @@ public class ProvenanceServlet extends HttpServlet {
         obj.put("publicKeyMultibase", key.publicKeyMultibase());
         obj.put("publicKeyJwk", org.apache.jena.atlas.json.JSON.parse(key.jwk()));
         obj.put("publicKeyPem", key.publicPem());
+        obj.put("keyType", key.keyType().curveName());
+        obj.put("cryptosuite", key.keyType().cryptosuite());
+        obj.put("signer", key.kind());
         json(resp, obj);
     }
 

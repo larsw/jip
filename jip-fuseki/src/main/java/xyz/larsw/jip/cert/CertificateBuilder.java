@@ -45,14 +45,14 @@ public final class CertificateBuilder {
     }
 
     /** Build the certificate graph and sign it with {@code key}. */
-    public static Graph buildSigned(Input in, SigningKey key, String agentLabel) {
+    public static Graph buildSigned(Input in, ProvenanceSigner key, String agentLabel) {
         Graph g = build(in, key, agentLabel);
         DataIntegrityProof.sign(g, certificateNode(in.certificateId()), key, in.ended());
         return g;
     }
 
     /** Build the (unsigned) certificate graph. */
-    public static Graph build(Input in, SigningKey key, String agentLabel) {
+    public static Graph build(Input in, ProvenanceSigner key, String agentLabel) {
         Graph g = GraphMemFactory.createDefaultGraph();
         Node cert = certificateNode(in.certificateId());
         Node result = NodeFactory.createURI(cert.getURI() + "#result");

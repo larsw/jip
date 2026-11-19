@@ -3,7 +3,7 @@
 #
 #   scripts/demo.sh [--reset] [--tsa "<url> [<url>...]"] [--no-tsa]
 #
-#   --reset    delete the demo's Docker volume first (databases, signing key)
+#   --reset    delete the demo's Docker volumes first (databases, the signer's token and key)
 #   --tsa      RFC 3161 timestamp authorities, in priority order (default: $TSA_DEFAULT,
 #              or $JIP_TSA_URLS if set)
 #   --no-tsa   issue certificates without timestamps
@@ -98,11 +98,17 @@ if [[ -n "$RESET" ]]; then
   docker compose down -v
 fi
 
-bold "Build and start Fuseki 6.2.0 + module"
+bold "Build and start the signer (PKCS#11 token) and Fuseki 6.2.0 + module"
 docker compose --progress quiet up -d --build
 wait_ready
-DID=$(curl -fsS "$BASE/\$/provenance/key" | jq -r .id)
+curl -fsS "$BASE/\$/provenance/key" -o "$OUT/key.json"
+DID=$(jq -r .id "$OUT/key.json")
 info "signing key: $DID"
+info "signer: $(jq -r '"\(.signer), \(.keyType), \(.cryptosuite)"' "$OUT/key.json")"
+if [[ "$(jq -r .signer "$OUT/key.json")" == pkcs11 ]]; then
+  info "the key lives in the signer container (no network); Fuseki reaches it over a Unix socket:"
+  docker compose ps --format '{{.Service}}: {{.Image}} ({{.Status}})' | sed 's/^/     /'
+fi
 V0=$(curl -fsS "$BASE/\$/provenance/version/ds" | jq -r .version)
 info "persistent data version of /ds: $V0"
 if [[ -n "$TSA_URLS" ]]; then
@@ -217,6 +223,21 @@ if [[ -n "$TSA_URLS" ]]; then
   docker compose logs --no-log-prefix fuseki 2>/dev/null | grep -E 'Timestamp authority .* failed|fallback authority' | tail -2 \
     | sed -e $'s/\x1b\\[[0-9;]*[A-Za-z]//g' -e 's/^/   log: /' || true
   info "(the next run of this script restores the normal list)"
+fi
+
+if [[ "$(jq -r .signer "$OUT/key.json")" == pkcs11 ]]; then
+  bold "12. Restart the signer container: Fuseki reconnects to the token on the next signature"
+  docker compose restart signer >/dev/null 2>&1
+  for _ in $(seq 1 30); do
+    [[ "$(docker compose ps --format '{{.Health}}' signer)" == healthy ]] && break
+    sleep 1
+  done
+  query "$CERTIFIED_QUERY" "$OUT/results-restart.srj" "$OUT/query-restart.headers"
+  CERT5=$(jq -r '.results.bindings[0].cert.value' "$OUT/results-restart.srj")
+  certificate "$CERT5" certificate-restart.ttl
+  verify results-restart.srj certificate-restart.ttl
+  docker compose logs --no-log-prefix fuseki 2>/dev/null | grep -E 'reconnecting' | tail -1 \
+    | sed -e $'s/\x1b\\[[0-9;]*[A-Za-z]//g' -e 's/^/   log: /' || true
 fi
 
 bold "Done. Files are in $OUT"

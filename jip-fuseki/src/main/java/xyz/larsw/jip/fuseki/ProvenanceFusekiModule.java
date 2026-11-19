@@ -7,7 +7,7 @@ import org.apache.jena.fuseki.main.sys.FusekiAutoModule;
 import org.apache.jena.query.ARQ;
 import org.apache.jena.rdf.model.Model;
 import xyz.larsw.jip.cert.ProvenanceKeys;
-import xyz.larsw.jip.cert.SigningKey;
+import xyz.larsw.jip.cert.ProvenanceSigner;
 import xyz.larsw.jip.cert.TimestampAuthorities;
 import xyz.larsw.jip.sys.InitJIP;
 import org.slf4j.Logger;
@@ -42,8 +42,8 @@ public class ProvenanceFusekiModule implements FusekiAutoModule {
     @Override
     public void serverBeforeStarting(FusekiServer server) {
         // Load (or generate) the key at startup so problems show early and the did:key is logged.
-        SigningKey key = ProvenanceKeys.get();
-        LOG.info("Provenance signing key: {} ({})", key.didKey(), ProvenanceKeys.keyFile());
+        ProvenanceSigner signer = ProvenanceKeys.get();
+        LOG.info("Provenance signer: {} {}, {}", signer.kind(), signer.didKey(), signer.description());
     }
 
     @Override

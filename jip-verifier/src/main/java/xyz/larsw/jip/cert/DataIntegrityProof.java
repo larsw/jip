@@ -1,5 +1,8 @@
 package xyz.larsw.jip.cert;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
@@ -19,14 +22,17 @@ import org.apache.jena.vocabulary.RDF;
 import xyz.larsw.jip.canon.RdfCanonicalizer;
 
 /**
- * W3C Data Integrity proofs with the {@code eddsa-rdfc-2022} cryptosuite
- * (https://www.w3.org/TR/vc-di-eddsa/), applied at the RDF level.
+ * W3C Data Integrity proofs with the {@code eddsa-rdfc-2022} (https://www.w3.org/TR/vc-di-eddsa/)
+ * and {@code ecdsa-rdfc-2019} (https://www.w3.org/TR/vc-di-ecdsa/) cryptosuites, applied at the
+ * RDF level. The key type ({@link KeyType}) selects the cryptosuite and the hash.
  * <ul>
  * <li>Unsecured document: the graph without the proof node's triples and without
  * {@code <doc> sec:proof _:p}.</li>
  * <li>Proof configuration: the proof node's triples without {@code sec:proofValue}.</li>
- * <li>hashData = SHA-256(RDFC-1.0(proofConfig)) || SHA-256(RDFC-1.0(document)).</li>
- * <li>proofValue = multibase base58btc of the Ed25519 signature of hashData.</li>
+ * <li>hashData = H(RDFC-1.0(proofConfig)) || H(RDFC-1.0(document)), with H = SHA-256 (Ed25519,
+ * P-256) or SHA-384 (P-384).</li>
+ * <li>proofValue = multibase base58btc of the signature of hashData: Ed25519, or ECDSA with
+ * SHA-256 / SHA-384 in IEEE P1363 format.</li>
  * </ul>
  * The proof is embedded as plain triples, not as the JSON-LD {@code @graph} container that the
  * VC serialization uses.
@@ -34,7 +40,8 @@ import xyz.larsw.jip.canon.RdfCanonicalizer;
 public final class DataIntegrityProof {
     private DataIntegrityProof() {}
 
-    public static final String CRYPTOSUITE = "eddsa-rdfc-2022";
+    /** The Ed25519 cryptosuite (kept for compatibility; see {@link KeyType#cryptosuite()}). */
+    public static final String CRYPTOSUITE = KeyType.EDDSA_RDFC_2022;
 
     /** Outcome of a verification. */
     public record Verification(boolean valid, String verificationMethod, Instant created, List<String> problems) {
@@ -49,9 +56,10 @@ public final class DataIntegrityProof {
      * @return the proof node
      */
     public static Node sign(Graph graph, Node subject, ProofSigner signer, Instant created) {
+        KeyType type = signer.keyType();
         Node proof = NodeFactory.createBlankNode();
-        Graph proofConfig = proofConfig(proof, signer.verificationMethod(), created);
-        byte[] hashData = hashData(proofConfig, graph);
+        Graph proofConfig = proofConfig(proof, type.cryptosuite(), signer.verificationMethod(), created);
+        byte[] hashData = hashData(proofConfig, graph, type.digest());
         String proofValue = Base58.encodeMultibase(signer.sign(hashData));
 
         proofConfig.find().forEach(graph::add);
@@ -60,12 +68,17 @@ public final class DataIntegrityProof {
         return proof;
     }
 
-    /** The proof configuration triples (everything but {@code sec:proofValue}). */
+    /** The {@code eddsa-rdfc-2022} proof configuration triples. */
     public static Graph proofConfig(Node proof, String verificationMethod, Instant created) {
+        return proofConfig(proof, CRYPTOSUITE, verificationMethod, created);
+    }
+
+    /** The proof configuration triples (everything but {@code sec:proofValue}). */
+    public static Graph proofConfig(Node proof, String cryptosuite, String verificationMethod, Instant created) {
         Graph g = GraphMemFactory.createDefaultGraph();
         String createdLex = DateTimeFormatter.ISO_INSTANT.format(created.truncatedTo(ChronoUnit.SECONDS));
         g.add(proof, RDF.type.asNode(), Vocab.secDataIntegrityProof);
-        g.add(proof, Vocab.secCryptosuite, NodeFactory.createLiteralDT(CRYPTOSUITE, datatype(Vocab.secCryptosuiteString)));
+        g.add(proof, Vocab.secCryptosuite, NodeFactory.createLiteralDT(cryptosuite, datatype(Vocab.secCryptosuiteString)));
         g.add(proof, Vocab.dctermsCreated, NodeFactory.createLiteralDT(createdLex, XSDDatatype.XSDdateTime));
         g.add(proof, Vocab.secVerificationMethod, NodeFactory.createURI(verificationMethod));
         g.add(proof, Vocab.secProofPurpose, Vocab.secAssertionMethod);
@@ -74,9 +87,14 @@ public final class DataIntegrityProof {
 
     /** SHA-256(canon(proofConfig)) || SHA-256(canon(document)). */
     public static byte[] hashData(Graph proofConfig, Graph unsecuredDocument) {
+        return hashData(proofConfig, unsecuredDocument, "SHA-256");
+    }
+
+    /** H(canon(proofConfig)) || H(canon(document)) with the JCA digest {@code digest}. */
+    public static byte[] hashData(Graph proofConfig, Graph unsecuredDocument, String digest) {
         RdfCanonicalizer canon = RdfCanonicalizer.standard();
-        byte[] proofHash = RdfCanonicalizer.sha256(canon.canonicalize(proofConfig));
-        byte[] docHash = RdfCanonicalizer.sha256(canon.canonicalize(unsecuredDocument));
+        byte[] proofHash = hash(digest, canon.canonicalize(proofConfig));
+        byte[] docHash = hash(digest, canon.canonicalize(unsecuredDocument));
         byte[] combined = new byte[proofHash.length + docHash.length];
         System.arraycopy(proofHash, 0, combined, 0, proofHash.length);
         System.arraycopy(docHash, 0, combined, proofHash.length, docHash.length);
@@ -106,7 +124,7 @@ public final class DataIntegrityProof {
         List<String> problems = new ArrayList<>();
         Optional<String> cryptosuite = single(proofTriples, Vocab.secCryptosuite).filter(Node::isLiteral)
                 .map(Node::getLiteralLexicalForm);
-        if ( !cryptosuite.map(CRYPTOSUITE::equals).orElse(false) )
+        if ( !cryptosuite.map(c -> c.equals(KeyType.EDDSA_RDFC_2022) || c.equals(KeyType.ECDSA_RDFC_2019)).orElse(false) )
             problems.add("Unsupported or missing cryptosuite: " + cryptosuite.orElse("(none)"));
         if ( !graph.contains(proof, RDF.type.asNode(), Vocab.secDataIntegrityProof) )
             problems.add("Proof is not a sec:DataIntegrityProof");
@@ -125,16 +143,27 @@ public final class DataIntegrityProof {
             return new Verification(false, vm.map(Node::getURI).orElse(null), created, problems);
 
         String verificationMethod = vm.get().getURI();
-        byte[] publicKey;
+        DidKey.Key key;
         byte[] signature;
         try {
-            publicKey = DidKey.publicKey(verificationMethod);
+            key = DidKey.resolve(verificationMethod);
             signature = Base58.decodeMultibase(proofValue.get());
         } catch (IllegalArgumentException ex) {
             return new Verification(false, verificationMethod, created, List.of(ex.getMessage()));
         }
-        boolean ok = DidKey.verify(publicKey, hashData(proofConfig, document), signature);
+        if ( !key.type().cryptosuite().equals(cryptosuite.get()) )
+            return new Verification(false, verificationMethod, created,
+                                    List.of("Cryptosuite " + cryptosuite.get() + " does not use " + key.type().curveName() + " keys"));
+        boolean ok = DidKey.verify(key, hashData(proofConfig, document, key.type().digest()), signature);
         return new Verification(ok, verificationMethod, created, ok ? List.of() : List.of("Signature does not verify"));
+    }
+
+    private static byte[] hash(String digest, String text) {
+        try {
+            return MessageDigest.getInstance(digest).digest(text.getBytes(StandardCharsets.UTF_8));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 
     private static Optional<Node> single(List<Triple> triples, Node predicate) {

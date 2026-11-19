@@ -39,7 +39,7 @@ import xyz.larsw.jip.cert.CertificateBuilder;
 import xyz.larsw.jip.cert.CertificateStore;
 import xyz.larsw.jip.cert.CertificateTimestamps;
 import xyz.larsw.jip.cert.ProvenanceKeys;
-import xyz.larsw.jip.cert.SigningKey;
+import xyz.larsw.jip.cert.ProvenanceSigner;
 import xyz.larsw.jip.cert.TimestampAuthorities;
 import xyz.larsw.jip.version.DataVersion;
 import xyz.larsw.jip.version.DataVersionComponent;
@@ -132,7 +132,7 @@ public class CertifyServiceExecutor implements ChainingServiceExecutor {
 
         UUID certId = UUID.randomUUID();
         Node certNode = CertificateBuilder.certificateNode(certId);
-        SigningKey key = ProvenanceKeys.get();
+        ProvenanceSigner key = ProvenanceKeys.get();
         CertificateBuilder.Input input = new CertificateBuilder.Input(
                 certId, dataVersion.databaseId(), dataVersion.datasetIRI().orElse(null), eval.version(),
                 variables, ordered, eval.rows().size(), digest,

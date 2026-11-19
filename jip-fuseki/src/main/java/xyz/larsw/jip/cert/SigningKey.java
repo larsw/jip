@@ -11,9 +11,11 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Signature;
 import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
 import java.util.Base64;
 
@@ -37,7 +39,7 @@ import org.slf4j.LoggerFactory;
  * {@code PUBLIC KEY} block. The key is held as its 32-byte RFC 8032 seed. BouncyCastle derives
  * the public key and handles the PKCS#8 and PEM encodings; signing uses the JDK's Ed25519.
  */
-public final class SigningKey implements ProofSigner {
+public final class SigningKey implements ProvenanceSigner {
     private static final Logger LOG = LoggerFactory.getLogger(SigningKey.class);
 
     /** multicodec ed25519-priv (0x1300) as unsigned varint. */
@@ -48,6 +50,9 @@ public final class SigningKey implements ProofSigner {
     private final byte[] seed;
     private final PrivateKey privateKey;
     private final byte[] rawPublicKey;
+
+    /** Where the key came from, for logs. */
+    private volatile String source = "in memory";
 
     private SigningKey(byte[] seed) {
         this.seed = seed.clone();
@@ -132,7 +137,7 @@ public final class SigningKey implements ProofSigner {
     public static SigningKey loadOrGenerate(Path pemFile) {
         try {
             if ( Files.exists(pemFile) )
-                return fromPem(Files.readString(pemFile, StandardCharsets.US_ASCII));
+                return fromPem(Files.readString(pemFile, StandardCharsets.US_ASCII)).from("key file " + pemFile);
             SigningKey key = generate();
             Files.createDirectories(pemFile.toAbsolutePath().getParent());
             Path tmp = pemFile.resolveSibling(pemFile.getFileName() + ".tmp");
@@ -142,7 +147,7 @@ public final class SigningKey implements ProofSigner {
             } catch (UnsupportedOperationException ignored) {}
             Files.move(tmp, pemFile);
             LOG.info("Generated new provenance signing key {} at {}", key.didKey(), pemFile);
-            return key;
+            return key.from("key file " + pemFile);
         } catch (IOException ex) {
             throw new UncheckedIOException("Signing key " + pemFile, ex);
         }
@@ -184,7 +189,50 @@ public final class SigningKey implements ProofSigner {
         return DidKey.verificationMethod(rawPublicKey);
     }
 
+    private SigningKey from(String where) {
+        this.source = where;
+        return this;
+    }
+
+    @Override
+    public String kind() {
+        return "local";
+    }
+
+    @Override
+    public String description() {
+        return "Ed25519 " + source;
+    }
+
+    @Override
+    public PublicKey publicKey() {
+        try {
+            return KeyFactory.getInstance("Ed25519").generatePublic(new X509EncodedKeySpec(DidKey.toSpki(rawPublicKey)));
+        } catch (GeneralSecurityException ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
+    @Override
+    public KeyType keyType() {
+        return KeyType.ED25519;
+    }
+
+    /** The built-in provider for {@code local}: an Ed25519 key in a PEM file, created if missing. */
+    public static final class Factory implements SignerProvider {
+        @Override
+        public String name() {
+            return "local";
+        }
+
+        @Override
+        public ProvenanceSigner open(SignerSettings settings) {
+            return loadOrGenerate(ProvenanceKeys.keyFile(settings));
+        }
+    }
+
     /** Public key as a JWK (RFC 8037). */
+    @Override
     public String jwk() {
         String x = Base64.getUrlEncoder().withoutPadding().encodeToString(rawPublicKey);
         return "{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"" + x + "\"}";
