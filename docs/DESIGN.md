@@ -336,7 +336,7 @@ counter persisted.
 
 ## 5. Packaging
 
-- **Build:** a Maven parent with three modules, all `xyz.larsw:*:0.15.0-SNAPSHOT`, all in
+- **Build:** a Maven parent with three modules, all `xyz.larsw:*:0.15.0`, all in
   the package `xyz.larsw.jip`:
   - `jip-verifier`: canonicalization, the `rs:` encoding, Data Integrity proofs
     (`DataIntegrityProof`, signing through the `ProofSigner` interface), `did:key`
@@ -402,7 +402,7 @@ These are the places where building the PoC refined the plan above.
   `/$/ping` are public; the rest of `/$/` is localhost-only.
 - **Recorded pattern text.** `jip:servicePattern` is written after undoing the algebra's scope
   renaming (`?/p` → `?p`), so it reads like the query.
-- **Measured cost.** Digesting 10,000 rows takes 0.23–0.38 s (Intel Core Ultra 7 265,
+- **Measured cost.** Digesting 10,000 rows takes 0.22–0.38 s (Intel Core Ultra 7 265,
   OpenJDK 25), well inside the 10 s canonicalization limit, which also stops the W3C
   poison-graph test case.
 - **Packaging.** In the Fuseki module jar, titanium-rdfc is shaded **and relocated**,
