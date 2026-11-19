@@ -37,6 +37,13 @@ REPO_SLUG="larsw/jip"
 die() { echo "release: $*" >&2; exit 1; }
 step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 
+# quiet <log> <command...>: run with output to a log; show its tail and stop if it fails.
+quiet() {
+  local log=$1; shift
+  mkdir -p "$(dirname "$log")"
+  "$@" > "$log" 2>&1 || { tail -40 "$log" >&2; die "failed: $* (full log: $log)"; }
+}
+
 usage() { sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 [[ $# -ge 2 ]] || usage
@@ -133,7 +140,8 @@ build_vocab_site() {
     py=build/.venv-vocab/bin/python
   fi
   rm -rf build/vocab-site
-  "$py" scripts/build-vocab-site.py build/vocab-site
+  quiet build/release-logs/vocab-site.log "$py" scripts/build-vocab-site.py build/vocab-site
+  tail -1 build/release-logs/vocab-site.log
 }
 
 case "$CMD" in
@@ -160,10 +168,11 @@ EOF
     echo "releasing $VERSION (previous tag: ${PREV_TAG:-none})"
 
     step "Build and test (mvn clean verify)"
-    mvn -q -B clean verify
+    quiet build/release-logs/mvn.log mvn -B clean verify
+    grep -aE 'Tests run: [0-9]+, Failures: [0-9]+, Errors: [0-9]+, Skipped: [0-9]+$' build/release-logs/mvn.log | sed 's/^\[INFO\] /  /'
 
     step "Whitepaper"
-    scripts/build-whitepaper.sh --clean >/dev/null
+    quiet build/release-logs/whitepaper.log scripts/build-whitepaper.sh --clean
     grep -aqE "Overfull|undefined" docs/whitepaper/build/whitepaper.log \
       && echo "warning: the whitepaper log has overfull boxes or undefined references" >&2
 
@@ -217,7 +226,7 @@ EOF
     if [[ -n "$NEXT" ]]; then
       step "Next version $NEXT-SNAPSHOT"
       set_version "$NEXT-SNAPSHOT"
-      mvn -q -B -o verify -DskipTests
+      quiet build/release-logs/mvn-next.log mvn -B -o verify -DskipTests
       git add -A
       git commit -q -m "Bump version to $NEXT-SNAPSHOT" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
       git push -q origin main
