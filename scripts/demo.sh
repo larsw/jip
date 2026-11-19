@@ -31,7 +31,7 @@ SIGNER="${JIP_SIGNER:-pkcs11}"
 
 cd "$(dirname "$0")/.."
 BASE=http://localhost:${JIP_PORT:-3030}
-IMAGE=jena-intrinsic-provenance:0.16.0
+IMAGE=jena-intrinsic-provenance:0.17.0
 OUT="$PWD/demo-out"
 mkdir -p "$OUT"
 

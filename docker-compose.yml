@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: docker/signer/Dockerfile
-    image: jip-signer:0.16.0
+    image: jip-signer:0.17.0
     network_mode: none
     environment:
       # User PIN of the token, set when it is first initialized (demo value; use a secret).
@@ -18,7 +18,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    image: jena-intrinsic-provenance:0.16.0
+    image: jena-intrinsic-provenance:0.17.0
     depends_on:
       signer:
         condition: service_healthy

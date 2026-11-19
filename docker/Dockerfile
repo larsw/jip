@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 #
 # Apache Jena Fuseki 6.2.0 + jena-intrinsic-provenance.
-#   docker build -f docker/Dockerfile -t jena-intrinsic-provenance:0.16.0 .
+#   docker build -f docker/Dockerfile -t jena-intrinsic-provenance:0.17.0 .
 # Tests run during the build (on JDK 21); skip with --build-arg SKIP_TESTS=true.
 
 # ---- Build the modules: the Fuseki module jar and the verifier CLI jar (both shaded)
