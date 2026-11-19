@@ -205,9 +205,11 @@ a release has two phases:
 ```bash
 scripts/release.sh prepare 0.13.0                # set 0.13.0 everywhere, commit nothing
 scripts/demo.sh --reset                          # then update the whitepaper listings from the run
-scripts/release.sh publish 0.13.0 --next 0.14.0  # build, tag, push, release, move to 0.14.0-SNAPSHOT
+scripts/release.sh publish 0.13.0                # build, tag, push, release, move to 0.14.0-SNAPSHOT
 ```
 
+After the release, `publish` moves to the next minor SNAPSHOT version; `--next X.Y.Z` picks
+another, `--no-next` skips it, and `scripts/release.sh next X.Y.Z` does it on its own.
 `--dry-run` stops `publish` before anything is committed. Pushing `vocab/` to `main` makes the
 GitHub Pages workflow publish the vocabulary at <https://larsw.xyz/jip/>.
 

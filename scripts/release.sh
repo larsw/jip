@@ -3,7 +3,8 @@
 # site, tag, GitHub release.
 #
 #   scripts/release.sh prepare <version>
-#   scripts/release.sh publish <version> [--next <version>] [--notes <file>] [--dry-run]
+#   scripts/release.sh publish <version> [--next <version> | --no-next] [--notes <file>] [--dry-run]
+#   scripts/release.sh next <version>
 #
 # A release has a manual step in the middle, because the whitepaper's listings and demo table
 # show the output of a demo run of the release itself:
@@ -13,7 +14,7 @@
 #        the vocabulary's owl:versionInfo and dcterms:modified). Nothing is committed.
 #   2. scripts/demo.sh --reset
 #        Then update the whitepaper's listings and demo table from the output and demo-out/.
-#   3. scripts/release.sh publish 0.13.0 --next 0.14.0
+#   3. scripts/release.sh publish 0.13.0
 #        - mvn clean verify
 #        - the whitepaper PDF (scripts/build-whitepaper.sh)
 #        - the vocabulary site (scripts/build-vocab-site.py), as a release asset; pushing
@@ -22,8 +23,12 @@
 #        - GitHub release v<version> with the whitepaper PDF, the repository at the tag (zip)
 #          and the vocabulary site (zip); notes from --notes, or the commit subjects since the
 #          previous tag
-#        - with --next: set <next>-SNAPSHOT, build, commit "Bump version to ...", push
+#        - move on to the next version: set <next>-SNAPSHOT, build, commit "Bump version to ...",
+#          push. The next version is the next minor one (0.13.0 -> 0.14.0-SNAPSHOT) unless
+#          --next names another; --no-next skips this step.
 #      --dry-run stops after the builds: nothing is committed, tagged or pushed.
+#
+# 'scripts/release.sh next 0.14.0' does only that last step, after a release made without it.
 #
 # Needs: git, gh (authenticated), mvn, python3, latexmk (or WHITEPAPER_DOCKER=1, see
 # scripts/build-whitepaper.sh), zip. The vocabulary site needs rdflib; if python3 can't import
@@ -44,14 +49,15 @@ quiet() {
   "$@" > "$log" 2>&1 || { tail -40 "$log" >&2; die "failed: $* (full log: $log)"; }
 }
 
-usage() { sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 [[ $# -ge 2 ]] || usage
 CMD=$1; VERSION=$2; shift 2
-NEXT=""; NOTES=""; DRY_RUN=0
+NEXT=""; NO_NEXT=0; NOTES=""; DRY_RUN=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --next) [[ $# -ge 2 ]] || die "--next needs a version"; NEXT=$2; shift ;;
+    --no-next) NO_NEXT=1 ;;
     --notes) [[ $# -ge 2 ]] || die "--notes needs a file"; NOTES=$2; shift ;;
     --dry-run) DRY_RUN=1 ;;
     *) usage ;;
@@ -61,6 +67,11 @@ done
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "version must be X.Y.Z, got '$VERSION'"
 [[ -z "$NEXT" || "$NEXT" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "--next must be X.Y.Z, got '$NEXT'"
 [[ -z "$NOTES" || -f "$NOTES" ]] || die "no notes file $NOTES"
+[[ -n "$NEXT" && $NO_NEXT == 1 ]] && die "--next and --no-next exclude each other"
+if [[ "$CMD" == publish && -z "$NEXT" && $NO_NEXT == 0 ]]; then
+  IFS=. read -r major minor _ <<< "$VERSION"
+  NEXT="$major.$((minor + 1)).0"
+fi
 
 current_version() {
   python3 -I - <<'PY'
@@ -144,7 +155,25 @@ build_vocab_site() {
   tail -1 build/release-logs/vocab-site.log
 }
 
+# bump_to_snapshot <version>: set <version>-SNAPSHOT, build, commit, push.
+bump_to_snapshot() {
+  step "Next version $1-SNAPSHOT"
+  set_version "$1-SNAPSHOT"
+  quiet build/release-logs/mvn-next.log mvn -B -o verify -DskipTests
+  git add -A
+  git commit -q -m "Bump version to $1-SNAPSHOT" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+  git push -q origin main
+}
+
 case "$CMD" in
+  next)
+    [[ "$(current_version)" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "version is $(current_version), not a release version"
+    [[ "$(git rev-parse --abbrev-ref HEAD)" == main ]] || die "not on main"
+    [[ -z "$(git status --porcelain)" ]] || die "uncommitted changes"
+    bump_to_snapshot "$VERSION"
+    echo "now at $(current_version)"
+    ;;
+
   prepare)
     [[ "$(current_version)" == "$VERSION-SNAPSHOT" ]] || die "expected version $VERSION-SNAPSHOT, found $(current_version)"
     step "Set version $VERSION"
@@ -154,7 +183,7 @@ case "$CMD" in
 Next:
   scripts/demo.sh --reset
   update the whitepaper's listings and demo table from the demo output and demo-out/
-  scripts/release.sh publish $VERSION --next <next version>
+  scripts/release.sh publish $VERSION      (then moves to the next minor SNAPSHOT; --next / --no-next)
 EOF
     ;;
 
@@ -224,12 +253,7 @@ EOF
       "$DIST/jip-$VERSION-whitepaper.pdf" "$DIST/jip-$VERSION.zip" "$DIST/jip-$VERSION-vocab-site.zip"
 
     if [[ -n "$NEXT" ]]; then
-      step "Next version $NEXT-SNAPSHOT"
-      set_version "$NEXT-SNAPSHOT"
-      quiet build/release-logs/mvn-next.log mvn -B -o verify -DskipTests
-      git add -A
-      git commit -q -m "Bump version to $NEXT-SNAPSHOT" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
-      git push -q origin main
+      bump_to_snapshot "$NEXT"
     fi
 
     step "Done"
