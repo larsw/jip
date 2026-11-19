@@ -23,7 +23,8 @@ services:
       signer:
         condition: service_healthy
     ports:
-      - "3030:3030"
+      # Host port: JIP_PORT (default 3030).
+      - "${JIP_PORT:-3030}:3030"
     volumes:
       # Databases (ds, provenance) and Fuseki's run area.
       - fuseki-data:/fuseki

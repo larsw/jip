@@ -8,7 +8,8 @@
 #              or $JIP_TSA_URLS if set)
 #   --no-tsa   issue attestations without timestamps
 #
-# Needs: docker (compose v2), curl, jq. Writes files to ./demo-out.
+# Needs: docker (compose v2), curl, jq. Writes files to ./demo-out. JIP_PORT sets the host port
+# (default 3030).
 set -euo pipefail
 
 TSA_DEFAULT="http://timestamp.digicert.com http://timestamp.sectigo.com https://freetsa.org/tsr"
@@ -27,7 +28,7 @@ done
 export JIP_TSA_URLS="$TSA_URLS"
 
 cd "$(dirname "$0")/.."
-BASE=http://localhost:3030
+BASE=http://localhost:${JIP_PORT:-3030}
 IMAGE=jena-intrinsic-provenance:0.13.0
 OUT="$PWD/demo-out"
 mkdir -p "$OUT"
