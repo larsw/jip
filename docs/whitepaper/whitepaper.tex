@@ -132,7 +132,9 @@ compaction, and crashes leave it consistent with the data. The second part is a 
 \code{SERVICE} that certifies the solutions of the pattern inside it. Each certificate is a
 PROV-O graph that names the database state, records a SHA-256 digest of the solutions after
 RDF Dataset Canonicalization (RDFC-1.0), and carries a W3C Data Integrity proof made with the
-\code{eddsa-rdfc-2022} cryptosuite and a \code{did:key}. A standalone verifier checks a saved
+\code{eddsa-rdfc-2022} cryptosuite and a \code{did:key}. Optionally, an RFC~3161
+time-stamping authority co-signs the certificate's signature, which fixes when the certificate
+existed independently of the server's clock. A standalone verifier checks a saved
 result against its certificate without contacting the server. The implementation passes all 65
 tests of the W3C RDFC-1.0 test suite, reproduces the \code{eddsa-rdfc-2022} test vector byte
 for byte, and digests 10,000 solutions, the default maximum, in about one second.
@@ -168,7 +170,8 @@ counter that TDB2 writes to its own journal in the same commit as the data, and 
 that recovers it after a crash. For RQ2, Section~\ref{sec:cert} describes a \code{SERVICE}
 that evaluates the pattern inside it, encodes the solutions as RDF, canonicalizes and hashes
 them, and signs a PROV-O certificate with the W3C Data Integrity cryptosuite
-\code{eddsa-rdfc-2022}~\cite{vcdi,eddsa}. It also covers an offline verifier.
+\code{eddsa-rdfc-2022}~\cite{vcdi,eddsa}. It also covers optional timestamps from an
+RFC~3161 time-stamping authority and an offline verifier.
 Section~\ref{sec:fuseki} shows how the module plugs into Fuseki without changes to Jena,
 Section~\ref{sec:eval} reports tests and measurements, and Section~\ref{sec:discussion}
 discusses what a certificate proves and what it leaves open.
@@ -210,14 +213,19 @@ fetch the certificate and verify the rows offline.
 \draw[->] (arq.east) -- node[lbl, above=2pt, sloped, pos=0.5] {rows + version} (ds.west);
 \draw[->] (arq.east) -- node[lbl, below=2pt, sloped, pos=0.5] {certificate} (prov.west);
 \draw[<-] (servlet.east) -- node[lbl, below=2pt] {fetch} (prov.west);
+
+\node[ext, below=9mm of fuseki.south, text width=40mm] (tsa) {Time-stamping authorities\\(RFC 3161, optional)};
+\draw[<->, dashed] (fuseki.south) -- node[lbl, right=2pt] {signature hash /\\timestamp token} (tsa.north);
 \end{tikzpicture}
-\caption{Components of the proof of concept and the path of a certified query.}
+\caption{Components of the proof of concept and the path of a certified query. If time-stamping
+authorities are configured, the certify executor asks one of them to co-sign each certificate.}
 \label{fig:architecture}
 \end{figure}
 
 The module runs on Java 21 and is loaded into the unmodified Fuseki server. The verifier is
 a separate library that needs neither TDB2 nor Fuseki (Section~\ref{sec:verification}). Its vocabulary uses the namespace \code{jip:} (\code{https://larsw.xyz/jip/}) and is
-defined in \file{vocab/jip.ttl}. The Maven coordinates are placeholders.
+defined in \file{vocab/jip.ttl}. The Maven group ID is \code{xyz.larsw}, and the Java
+packages are under \code{xyz.larsw.jip}.
 
 \subsection{Conventions}
 
@@ -316,6 +324,20 @@ recognizable by its leading \code{z}.
 The verification method used here is a \code{did:key}~\cite{didkey}, a decentralized
 identifier that contains the public key. A verifier reads the key out of the identifier and
 doesn't need to fetch anything.
+
+\subsection{Trusted Timestamps}
+\label{sec:tsp}
+
+A signature shows who signed something, but its creation time is whatever the signer wrote
+into it. The Time-Stamp Protocol of RFC~3161~\cite{rfc3161} adds a second party. A client sends a
+\emph{time-stamping authority} (TSA) the hash of some data, the \emph{message imprint}, and the
+TSA returns a \emph{time-stamp token}: a CMS signed structure that contains the imprint, the
+TSA's time (\code{genTime}), a serial number, and the nonce of the request, signed with a
+certificate whose extended key usage is \code{id-kp-timeStamping}. Anyone who has the data and
+the token can check, offline, that the data existed no later than \code{genTime}, as far as they
+trust the TSA. Code signing and long-term signature formats such as CAdES use the same
+construction to timestamp a signature value; several public TSAs answer such requests free of
+charge.
 
 \subsection{PROV-O}
 \label{sec:provo}
@@ -740,7 +762,8 @@ pattern as SPARQL text (\code{jip:servicePattern}), and the whole query
 (\code{jip:queryText}). The execution used, and the sequence was derived from, the dataset
 state \code{<DB\#v1>}. That state carries \code{jip:dataVersion} and specializes the
 configured dataset IRI. The server's key, as a \code{did:key}, is the software agent
-associated with the execution.
+associated with the execution. If a time-stamping authority is configured, the certificate also
+links to an RFC~3161 timestamp with \code{jip:timestamp} (Section~\ref{sec:timestamps}).
 
 \begin{figure}[ht]
 \centering
@@ -759,8 +782,11 @@ associated with the execution.
 \node[entity]   (state)  at (0,-5.4)   {\texttt{<DB\#v1>}\\jip:DatasetState};
 \node[agent]    (agent)  at (7.4,-5.6) {\texttt{<did:key:z6Mk...>}\\prov:SoftwareAgent};
 \node[entity]   (dset)   at (0,-8.1)   {\texttt{<https://example.org/datasets/ds>}};
+\node[plain]    (stamp)  at (7.4,2.3)  {\texttt{\_:t}\\jip:RFC3161Timestamp};
 
 \draw[->] (cert) -- node[lbl, above=1pt] {sec:proof} (proof);
+\draw[->] (cert) |- node[lbl, above=1pt, pos=0.75] {jip:timestamp} (stamp);
+\draw[->, dashed] (stamp) -- node[lbl, right=1pt] {covers proofValue} (proof);
 \draw[->] (cert) -- node[lbl, right=1pt] {jip:certifies} (result);
 \draw[->] (result) -- node[lbl, above=1pt] {prov:wasGeneratedBy} (exec);
 \draw[->] (exec) -- node[lbl, right=1pt] {prov:wasAssociatedWith} (agent);
@@ -770,27 +796,33 @@ associated with the execution.
 \draw[->, dashed] (proof.east) -- ++(2.2,0) |- node[lbl, sloped, above=1pt, pos=0.25] {sec:verificationMethod} (agent.east);
 \end{tikzpicture}
 \caption{Structure of a certificate, drawn with the PROV conventions: entities as ellipses,
-activities as rectangles, agents as pentagons. The dashed proof node is not part of PROV. Its
-verification method is the key in the agent's \code{did:key}.}
+activities as rectangles, agents as pentagons. The dashed proof and timestamp nodes are not
+part of PROV. The proof's verification method is the key in the agent's \code{did:key}; the
+optional timestamp covers the proof's signature value.}
 \label{fig:prov}
 \end{figure}
 
 \needspace{10\baselineskip}
 \begin{lstlisting}[language=Turtle, caption={A certificate from the demo, with prefixes added and long literals shortened.}, label={lst:certificate}]
-PREFIX c:   <urn:uuid:7f8e40d8-ee4a-40cd-8305-93f8c12750c2#>
-PREFIX db:  <urn:uuid:477ecd53-b6e7-483b-a677-43635e29cb88#>
-PREFIX key: <did:key:z6MkfPSmbbKCU4mQDg6J5tsZPKbrpekDbYW8TzgYRJZkF9JC#>
+PREFIX c:   <urn:uuid:f3b5b091-34d1-405a-adab-e7bff123fbf4#>
+PREFIX db:  <urn:uuid:68fc0d02-079b-4ba6-b452-933b28b040b5#>
+PREFIX key: <did:key:z6MkmAycJeexyFSaWGQs4nvKV61y4NiwjtZACSQG3iGQkg3i#>
 
-<urn:uuid:7f8e40d8-ee4a-40cd-8305-93f8c12750c2>
+<urn:uuid:f3b5b091-34d1-405a-adab-e7bff123fbf4>
     a jip:ResultCertificate, prov:Entity ;
     jip:certifies c:result ;
     sec:proof [
         a sec:DataIntegrityProof ;
         sec:cryptosuite "eddsa-rdfc-2022"^^sec:cryptosuiteString ;
-        sec:verificationMethod key:z6MkfPSmbbKCU4mQDg6J5tsZPKbrpekDbYW8TzgYRJZkF9JC ;
+        sec:verificationMethod key:z6MkmAycJeexyFSaWGQs4nvKV61y4NiwjtZACSQG3iGQkg3i ;
         sec:proofPurpose sec:assertionMethod ;
-        dcterms:created "2026-11-15T20:44:38Z"^^xsd:dateTime ;
-        sec:proofValue "z4ponFRVw4vW...mGMeYn2Q"^^sec:multibase ] .
+        dcterms:created "2026-11-19T12:37:27Z"^^xsd:dateTime ;
+        sec:proofValue "z4NYp7ARtMDL...fxBYswao"^^sec:multibase ] ;
+    jip:timestamp [
+        a jip:RFC3161Timestamp ;
+        jip:timestampToken "MIIXawYJKoZIhvcNAQcCoIIXXDCC..."^^xsd:base64Binary ;
+        jip:timestampAuthority <http://timestamp.digicert.com> ;
+        jip:timestampTime "2026-11-19T12:37:28Z"^^xsd:dateTime ] .
 
 c:result a jip:SolutionSequence, prov:Entity ;
     prov:wasGeneratedBy c:exec ;
@@ -804,9 +836,9 @@ c:result a jip:SolutionSequence, prov:Entity ;
 
 c:exec a jip:QueryExecution, prov:Activity ;
     prov:used db:v1 ;
-    prov:wasAssociatedWith <did:key:z6MkfPSmbbKCU4mQDg6J5tsZPKbrpekDbYW8TzgYRJZkF9JC> ;
-    prov:startedAtTime "2026-11-15T20:44:38.515860037Z"^^xsd:dateTime ;
-    prov:endedAtTime   "2026-11-15T20:44:38.586955493Z"^^xsd:dateTime ;
+    prov:wasAssociatedWith <did:key:z6MkmAycJeexyFSaWGQs4nvKV61y4NiwjtZACSQG3iGQkg3i> ;
+    prov:startedAtTime "2026-11-19T12:37:27.671103423Z"^^xsd:dateTime ;
+    prov:endedAtTime   "2026-11-19T12:37:27.698999830Z"^^xsd:dateTime ;
     jip:servicePattern "SELECT ?name ?email WHERE { ... } ORDER BY ?name" ;
     jip:queryText "PREFIX jip: <https://larsw.xyz/jip/> ..." .
 
@@ -814,9 +846,9 @@ db:v1 a jip:DatasetState, prov:Entity ;
     jip:dataVersion 1 ;
     prov:specializationOf <https://example.org/datasets/ds> .
 
-<did:key:z6MkfPSmbbKCU4mQDg6J5tsZPKbrpekDbYW8TzgYRJZkF9JC>
+<did:key:z6MkmAycJeexyFSaWGQs4nvKV61y4NiwjtZACSQG3iGQkg3i>
     a prov:SoftwareAgent ;
-    rdfs:label "jena-intrinsic-provenance 0.10.0-SNAPSHOT on Apache Jena 6.2.0" .
+    rdfs:label "jena-intrinsic-provenance 0.10.0 on Apache Jena 6.2.0" .
 \end{lstlisting}
 
 The certificate holds the digest of the rows and never the rows themselves, so its size
@@ -849,6 +881,52 @@ vector's proof value (Section~\ref{sec:conformance}). Off-the-shelf Verifiable C
 verifiers still won't accept a certificate as it is, because they expect a credential document
 in JSON-LD.
 
+\subsection{Timestamps}
+\label{sec:timestamps}
+
+The times in a certificate come from the server's clock: \code{prov:startedAtTime},
+\code{prov:endedAtTime}, and the proof's \code{dcterms:created}. They are only as trustworthy
+as the server. Optionally, a time-stamping authority (Section~\ref{sec:tsp}) co-signs each
+certificate. The message imprint is
+\[
+  \mathit{imprint} = \mathrm{SHA\text{-}256}(\mathrm{Ed25519}_{\mathit{sk}}(h)),
+\]
+the hash of the raw signature decoded from \code{sec:proofValue}. The signature covers the
+whole certificate, so the token does too, and the Data Integrity proof itself is unchanged.
+The request carries a random 64-bit nonce and asks for the TSA's certificate, so the token can
+be checked offline. The executor accepts a reply only if it grants a token for the same
+imprint and nonce and the token's signature verifies.
+
+The token is added after signing, as a node of its own:
+\begin{lstlisting}[language=Turtle, numbers=none]
+<C> jip:timestamp _:t .
+_:t a jip:RFC3161Timestamp ;
+    jip:timestampToken "MIIXawYJKoZIhvcNAQcCoIIXXDCC..."^^xsd:base64Binary ;
+    jip:timestampAuthority <http://timestamp.digicert.com> ;
+    jip:timestampTime "2026-11-19T12:37:28Z"^^xsd:dateTime .
+\end{lstlisting}
+Only the token is evidence. The authority and the time are copies for queries over the
+certificate store; the verifier reports what the token says. The timestamp triples are not part
+of the signed document $D$: a verifier removes the \code{jip:timestamp} links and the triples
+of the timestamp nodes before it checks the proof. Removing them can't hide a change, because
+removing any signed triple makes the proof fail.
+
+The setting \code{jip:timestampAuthorities} lists TSA URLs in priority order. For each
+certificate the executor asks them one at a time, each with its own timeout
+(\code{jip:timestampTimeout}, 5 seconds by default), and uses the first valid token. A TSA that
+fails is moved to the end of the list for 60 seconds, so one that is down costs one timeout a
+minute rather than one per certificate; it is still tried if all others fail. The policy
+(\code{jip:timestampPolicy}) decides what happens when no TSA answers: \code{optional}, the
+default, issues the certificate without a timestamp and logs a warning; \code{required} fails
+the certification. The environment variables \code{PROVENANCE\_TSA\_URLS},
+\code{PROVENANCE\_TSA\_POLICY}, and \code{PROVENANCE\_TSA\_TIMEOUT} override the three settings.
+Without any of them, certificates have no timestamp and are exactly as before.
+
+The protocol and CMS handling come from BouncyCastle~\cite{bouncycastle}, because the JDK has no
+public API for either. BouncyCastle also handles the Ed25519 key encodings (PKCS\#8,
+SubjectPublicKeyInfo, PEM) and derives the public key from the private seed; signing and
+verifying use the JDK's Ed25519.
+
 \subsection{Keys}
 \label{sec:keys}
 
@@ -864,13 +942,13 @@ Example~\ref{lst:key} shows.
 \needspace{11\baselineskip}
 \begin{lstlisting}[caption={The public key as returned by \code{GET /\$/provenance/key} (PEM shortened).}, label={lst:key}]
 {
-  "id": "did:key:z6MkfPSmbbKCU4mQDg6J5tsZPKbrpekDbYW8TzgYRJZkF9JC",
-  "verificationMethod": "did:key:z6MkfP...F9JC#z6MkfP...F9JC",
+  "id": "did:key:z6MkmAycJeexyFSaWGQs4nvKV61y4NiwjtZACSQG3iGQkg3i",
+  "verificationMethod": "did:key:z6MkmA...kg3i#z6MkmA...kg3i",
   "type": "Multikey",
-  "publicKeyMultibase": "z6MkfPSmbbKCU4mQDg6J5tsZPKbrpekDbYW8TzgYRJZkF9JC",
+  "publicKeyMultibase": "z6MkmAycJeexyFSaWGQs4nvKV61y4NiwjtZACSQG3iGQkg3i",
   "publicKeyJwk": { "kty": "OKP", "crv": "Ed25519",
-                    "x": "DeF9WD56PJhM4OjeOrEWBELIFg5y0BGeaIcfvAj1YCU" },
-  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEADeF9WD56..."
+                    "x": "Y9Xua7TLVKoyeIVcyRVPu9jbYrKC_tE29Kh58ZE2nOE" },
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAY9Xua7TL..."
 }
 \end{lstlisting}
 
@@ -894,15 +972,21 @@ interface, \code{CertificateStore}, so a file-based or remote store could replac
 \label{sec:verification}
 
 The verifier needs only the saved results and the certificate. Its checks are in a library,
-\file{jip-verifier}, which depends on \code{jena-arq} and titanium-rdfc but not on TDB2, Fuseki
-or the signing key, so other Java programs can verify certificates themselves. A command,
+\file{jip-verifier}, which depends on \code{jena-arq}, titanium-rdfc, and BouncyCastle but not
+on TDB2, Fuseki or the signing key, so other Java programs can verify certificates themselves. A command,
 \longcode{xyz.larsw.jip.cli.Verify}, wraps the library; it is packaged as a
 self-contained jar, and the Docker image runs it with the command \code{verify}. The
-verification works in four steps:
+verification works in five steps:
 
 \begin{enumerate}
-\item Check the proof against the key in the \code{did:key}. With \code{-{}-expect-key}, also
-  check that the key is the expected one.
+\item Check the proof against the key in the \code{did:key}, over the certificate without its
+  timestamps. With \code{-{}-expect-key}, also check that the key is the expected one.
+\item Check each timestamp: the token's imprint must be the hash of the proof's signature, the
+  TSA's signature must verify with the certificate in the token, and that certificate must be
+  a time-stamping certificate valid at \code{genTime}. Then chain the TSA certificate, at
+  \code{genTime} and without revocation checks, to trust anchors: the JVM's trust store
+  (\code{-{}-tsa-trust system}, the default), the CA certificates in a PEM file, or none
+  (\code{-{}-tsa-trust none}).
 \item Select the rows that carry the certificate IRI. Their number must equal the
   certificate's \code{jip:solutionCount}. For a certificate with zero solutions, accept at most one row, and
   only if that row binds none of the certified variables.
@@ -912,22 +996,28 @@ verification works in four steps:
 \end{enumerate}
 
 The short options \code{-r}, \code{-c}, and \code{-k} stand for \code{-{}-results},
-\code{-{}-cert}, and \code{-{}-expect-key}. The verifier exits with status 0 when everything matches, 1 when something doesn't, and 2 when the input
+\code{-{}-cert}, and \code{-{}-expect-key}. A broken timestamp makes the certificate invalid.
+An untrusted one is reported but only fails verification with \code{-{}-require-timestamp},
+which demands at least one valid timestamp that isn't untrusted. The verifier exits with
+status 0 when everything matches, 1 when something doesn't, and 2 when the input
 can't be read. Example~\ref{lst:verify} shows a successful run, followed by a run on the same
 results with one email address changed.
 
-\needspace{15\baselineskip}
-\begin{lstlisting}[basicstyle=\ttfamily\footnotesize, caption={Verifier output for the demo results and for a tampered copy (key IRIs shortened).}, label={lst:verify}]
-$ verify -r results.srj -c certificate.ttl -k did:key:z6MkfP...F9JC
-Certificate     : urn:uuid:7f8e40d8-ee4a-40cd-8305-93f8c12750c2
-Signed by       : did:key:z6MkfP...F9JC#z6MkfP...F9JC
+\needspace{18\baselineskip}
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize, caption={Verifier output for the demo results and for a tampered copy (key IRIs shortened, TSA line wrapped).}, label={lst:verify}]
+$ verify -r results.srj -c certificate.ttl -k did:key:z6MkmA...kg3i
+Certificate     : urn:uuid:f3b5b091-34d1-405a-adab-e7bff123fbf4
+Signed by       : did:key:z6MkmA...kg3i#z6MkmA...kg3i
 Signature       : OK
-Dataset state   : urn:uuid:477ecd53-b6e7-483b-a677-43635e29cb88#v1  (version 1)
+Timestamp       : OK  2026-11-19T12:37:28Z  (trusted)
+  TSA           : C=US,O=DigiCert\, Inc.,CN=DigiCert SHA256 RSA4096 Timestamp
+                  Responder 2026 1  via http://timestamp.digicert.com
+Dataset state   : urn:uuid:68fc0d02-079b-4ba6-b452-933b28b040b5#v1  (version 1)
 Solutions       : 3 certified, 3 row(s) carry this certificate
 Result digest   : OK
 VERIFIED
 
-$ verify -r results-tampered.srj -c certificate.ttl -k did:key:z6MkfP...F9JC
+$ verify -r results-tampered.srj -c certificate.ttl -k did:key:z6MkmA...kg3i
 ...
 Result digest   : MISMATCH
 Problem         : Result digest mismatch: certificate feb2d70a...f06efebe, rows b1c94dd9...92ecdc56
@@ -969,6 +1059,11 @@ Fuseki configuration.
     tdb2:location "/fuseki/databases/provenance" .
 \end{lstlisting}
 
+The timestamp settings of Section~\ref{sec:timestamps} go into the same server context. The
+demo's \file{docker-compose.yml} sets them through the environment instead, with DigiCert,
+Sectigo, and FreeTSA as the priority list, so the list can change without editing the
+configuration file.
+
 Table~\ref{tab:endpoints} lists the HTTP endpoints the module adds. When Fuseki runs with its
 user interface and finds no \file{shiro.ini}, it creates one that limits everything under
 \code{/\$/} to requests from localhost. The Docker image installs one that also allows anonymous access to
@@ -995,8 +1090,11 @@ dataset. \\
 
 The Maven build has three modules: the verifier library, the verifier command, and the Fuseki
 module. The Fuseki module's jar is the one Fuseki loads. Jena and Fuseki are \code{provided}
-dependencies, and the verifier library and titanium-rdfc are shaded in. The verifier command
-is a separate jar that bundles Jena. The Docker image is built in two stages. The first stage
+dependencies, and the verifier library and titanium-rdfc are shaded in, the latter relocated.
+Fuseki's server jar already contains BouncyCastle's \code{bcprov}, unrelocated, so the module
+shades in only \code{bcpkix} and \code{bcutil} at the same version (1.84) and links against
+Fuseki's copy; none of their classes overlap with the server jar. The jar grows from 141~KB to
+about 1.9~MB. The verifier command is a separate jar that bundles Jena and BouncyCastle. The Docker image is built in two stages. The first stage
 builds both jars in the \longcode{maven:3.9-eclipse-temurin-21} image and runs the test suite on Java
 21. The second stage starts from \longcode{eclipse-temurin:21-jre} and downloads
 \file{jena-fuseki-server-6.2.0.jar} from Maven Central, checked against a pinned SHA-256
@@ -1011,7 +1109,7 @@ the same image without installing Java.
 \subsection{Test Suite}
 \label{sec:tests}
 
-The build runs 102 tests, listed in Table~\ref{tab:tests}. They pass on OpenJDK 25 on the
+The build runs 131 tests, listed in Table~\ref{tab:tests}. They pass on OpenJDK 25 on the
 development machine and on Java 21 during the Docker build.
 
 \begin{table}[ht]
@@ -1028,17 +1126,28 @@ Test class & Tests & Coverage \\
 the functions, restart with stable identity, compaction, journal replay before open. \\
 \code{ResultSetEncodingTest} & 7 & Row order with and without \code{rs:index}, value changes,
 duplicates, blank nodes, empty results, rejection of RDF 1.2 terms. \\
-\code{DataIntegrityProofTest} & 7 & The \code{eddsa-rdfc-2022} test vectors, tampering, key
-storage, base58 encoding. \\
-\code{CertifyServiceTest} & 11 & Round trips for ordered and unordered results, tampering,
+\code{DataIntegrityProofTest} & 8 & The \code{eddsa-rdfc-2022} test vectors, tampering,
+\code{did:key} encoding, base58 encoding. \\
+\code{SigningKeyTest} & 7 & The signing key against the test vectors, PEM round trip and
+persistence, keys written by OpenSSL and the JDK, rejection of other key types and mismatched
+public keys. \\
+\code{CertificateTimestampsTest} & 6 & Timestamps against a test TSA: the proof stays valid,
+trust anchors, a token for another signature, a corrupted token, TSA certificate validity at
+\code{genTime}, reply and request matching. \\
+\code{TimestampAuthoritiesTest} & 4 & Fallback through a refusing and an unreachable TSA,
+cooldown order, configuration parsing. \\
+\code{CertifyServiceTest} & 13 & Round trips for ordered and unordered results, tampering,
 both empty-result modes, variable names, the cap, unversioned datasets and \code{SILENT}, the
-write-transaction refusal, versions after updates, correlated calls. \\
+write-transaction refusal, versions after updates, correlated calls, timestamped
+certificates, both timestamp policies. \\
 \code{CanonicalizationCapacityTest} & 1 & Digest time at 10,000 solutions. \\
 \code{FusekiIntegrationTest} & 1 & End to end over HTTP with \file{docker/config.ttl}. \\
 \code{VocabularyTest} & 3 & \file{vocab/jip.ttl} defines every \code{jip:} term the code uses,
 and no others (Appendix~\ref{app:vocab}). \\
+\code{VerifyTest} & 9 & Exit status of the verifier command for good, bad, and missing
+arguments, including the timestamp options. \\
 \midrule
-Total & 102 & \\
+Total & 131 & \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1060,7 +1169,8 @@ configuration, and the proof value, each byte for byte.
 \label{sec:demo}
 
 The script \file{scripts/demo.sh} runs against the Docker image. Table~\ref{tab:demo} shows a
-run that started with an empty volume.
+run that started with an empty volume, with the default TSA list: DigiCert, Sectigo, and
+FreeTSA.
 
 \begin{table}[ht]
 \centering
@@ -1075,7 +1185,9 @@ run that started with an empty volume.
 \code{X-Dataset-Version: 1}. \\
 2 & Run the certified query (Example~\ref{lst:query}) & Three rows with one certificate;
 \code{X-Dataset-Version: 1}. \\
-3 & Verify in a separate container & \code{VERIFIED}, exit status 0. \\
+3 & Verify in a separate container & \code{VERIFIED}, exit status 0. Timestamp from
+DigiCert, trusted through the JVM trust store, about one second after the proof's creation
+time. \\
 4 & Change one email address and verify & Digest mismatch, exit status 1. \\
 5 & Insert a fourth person, query again & Update header 2; new certificate for 4 solutions
 at version 2, verified. \\
@@ -1084,7 +1196,10 @@ solutions, verified. \\
 7 & Compare the counters & Persistent 2, internal 2. \\
 8 & Restart the container & Persistent 2, internal 0. \\
 9 & Insert one more person & Persistent 3, internal 1. \\
-10 & Query the certificate store & Three certificates, at versions 1, 2, and 2. \\
+10 & Query the certificate store & Three certificates, at versions 1, 2, and 2, each
+timestamped by DigiCert. \\
+11 & Put an unreachable TSA first in the list, query again & The server logs the failed TSA
+and falls back to DigiCert; the new certificate at version 3 verifies. \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1132,10 +1247,12 @@ memory up to the cap, and the certificate store adds one write transaction per c
 A valid certificate, checked against a trusted key, shows that the holder of that key stated
 that these rows were the solutions of this pattern against a given database state at a given
 time. It doesn't show that the server evaluated the query correctly or that the data is true.
-A compromised server can sign anything. The timestamps come from the server's clock; a
-time-stamping authority as defined in RFC~3161~\cite{rfc3161} would add independent evidence of
-when the certificate existed. Without a trusted key, a valid certificate shows only that the
-rows and the certificate belong together (Section~\ref{sec:keys}).
+A compromised server can sign anything. The times inside the certificate come from the
+server's clock. With a timestamp from a TSA the verifier trusts, the certificate is also known
+to have existed no later than the token's \code{genTime}, independently of that clock; the
+token says nothing about the times the server wrote. Without a trusted key, a valid
+certificate shows only that the rows and the certificate belong together
+(Section~\ref{sec:keys}).
 
 \subsection{Reproducing a Certified Result}
 \label{sec:reproduce}
@@ -1160,6 +1277,9 @@ whose name includes the database ID and version.
   without the module don't advance the version. A byte-for-byte copy of the database
   directory shares the original's database ID; if both copies receive writes, the pair of ID
   and version is no longer unique.
+\item Each timestamped certificate costs one outgoing HTTP request while the query runs, and
+  public TSAs limit request rates. Real use needs an own or contracted TSA. TSA certificates
+  are not checked for revocation, and a timestamp is only as trustworthy as the TSA's key.
 \item Refused certifications reach the client as HTTP 500 instead of a 4xx status.
 \item In embedded use with Jena 6.2.0, queries over TDB2 have to run inside a transaction,
   because lazily evaluated patterns fail outside one. This happens without the module too,
@@ -1179,11 +1299,14 @@ assembler and for the pre-open journal scan, and a persistent \code{dataVersion}
 would remove the component entirely.
 
 Other extensions follow from the limitations above: packaging certificates as Verifiable
-Credentials in JSON-LD so that existing verifiers accept them, RFC~3161 timestamps, access
+Credentials in JSON-LD so that existing verifiers accept them, access
 control and rate limits for certification, and HTTP status codes in the 4xx range for refused
 certifications. Results larger than the cap would need an encoding that can be hashed while
 streaming, for example a hash tree over chunks of rows, instead of holding all solutions in
-memory.
+memory. Timestamps could be batched, with one token over a hash tree of many certificates, to
+reduce the number of TSA requests, and revocation data for TSA certificates could be collected
+when the token is issued, so that a timestamp stays verifiable after the TSA certificate
+expires.
 
 % ====================================================================================
 \section{Conclusion}
@@ -1197,7 +1320,8 @@ recovered before TDB2 opens the database. A \code{SERVICE} with a reserved IRI c
 solutions of any pattern: the solutions are encoded as RDF, canonicalized with RDFC-1.0,
 hashed, and recorded in a PROV-O certificate signed with \code{eddsa-rdfc-2022}. The
 certificate can be checked offline, the cryptography matches the W3C test vectors, and
-10,000 solutions take about a second to digest.
+10,000 solutions take about a second to digest. An optional RFC~3161 timestamp over the
+signature adds evidence of when a certificate existed that doesn't depend on the server.
 
 % ====================================================================================
 % Keep floats from drifting into the appendices or the bibliography.
@@ -1217,7 +1341,7 @@ Maven with Java 21 or later for the local build.
 \begin{lstlisting}[language=bash, caption={Commands to build, test, and run the demo.}, label={lst:reproduce}]
 docker compose up -d --build    # build the module, run the tests on Java 21, start Fuseki
 scripts/demo.sh --reset         # end-to-end demo; --reset deletes the demo volume
-mvn test                        # the 102 tests on the local JDK
+mvn test                        # the 131 tests on the local JDK
 scripts/build-whitepaper.sh     # this report
 \end{lstlisting}
 
@@ -1229,7 +1353,8 @@ Table~\ref{tab:vocab} lists the terms of the \code{jip:} namespace. The file
 \file{vocab/jip.ttl} in the repository defines them in RDFS and OWL, with labels, comments,
 domains, and ranges, and places the certificate classes under PROV-O:
 \code{jip:QueryExecution} is a subclass of \code{prov:Activity}, and the other three
-certificate classes are subclasses of \code{prov:Entity}. The two functions are typed as
+certificate classes are subclasses of \code{prov:Entity}; \code{jip:RFC3161Timestamp} is
+not a PROV class. The two functions are typed as
 \code{sd:Function} from SPARQL 1.1 Service Description~\cite{sparqlsd}, and \code{jip:VersionedDatasetTDB2} as a
 subclass of \code{ja:RDFDataset}. The file also describes \code{jip:dataVersionComponent}, a
 context symbol the module uses internally. The test \code{VocabularyTest} fails if the file and
@@ -1258,6 +1383,9 @@ version. \\
 specializes. \\
 \code{jip:certificateStore} & Server setting: location of the certificate database. \\
 \code{jip:maxSolutions} & Server setting: largest result a certify call accepts. \\
+\code{jip:timestampAuthorities} & Server setting: TSA URLs in priority order. \\
+\code{jip:timestampPolicy} & Server setting: \code{optional} or \code{required}. \\
+\code{jip:timestampTimeout} & Server setting: time allowed per TSA, in milliseconds. \\
 \code{jip:dataVersion()} & Function: persistent version of the current snapshot. \\
 \code{jip:tdbDataVersion()} & Function: TDB2's internal counter. \\
 \midrule
@@ -1274,6 +1402,12 @@ specializes. \\
 \code{jip:servicePattern}, \code{jip:queryText} & The inner pattern and the whole query as
 SPARQL text. \\
 \code{jip:dataVersion} & Version number of a dataset state. \\
+\midrule
+\code{jip:RFC3161Timestamp} & Class of timestamps over a certificate's signature. \\
+\code{jip:timestamp} & Links a certificate to a timestamp. \\
+\code{jip:timestampToken} & The DER time-stamp token, base64-encoded. \\
+\code{jip:timestampAuthority}, \code{jip:timestampTime} & Copies of the issuing TSA and its time,
+for queries. \\
 \bottomrule
 \end{tabularx}
 \end{table}
