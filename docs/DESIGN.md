@@ -402,8 +402,9 @@ These are the places where building the PoC refined the plan above.
   `/$/ping` are public; the rest of `/$/` is localhost-only.
 - **Recorded pattern text.** `jip:servicePattern` is written after undoing the algebra's scope
   renaming (`?/p` → `?p`), so it reads like the query.
-- **Measured cost.** Digesting 10,000 rows takes about 1 s, well inside the 10 s
-  canonicalization limit, which also stops the W3C poison-graph test case.
+- **Measured cost.** Digesting 10,000 rows takes 0.23–0.38 s (Intel Core Ultra 7 265,
+  OpenJDK 25), well inside the 10 s canonicalization limit, which also stops the W3C
+  poison-graph test case.
 - **Packaging.** In the Fuseki module jar, titanium-rdfc is shaded **and relocated**,
   because the Fuseki jar already bundles other versions of `com.apicatalog.rdf.*`. The
   verifier library declares it as an ordinary dependency and leaves shading to whoever

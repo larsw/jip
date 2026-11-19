@@ -122,25 +122,25 @@
 
 \begin{abstract}
 \noindent
-A SPARQL endpoint answers a query with a table of solutions and says nothing about where they
-came from. A client can't tell which state of the database produced the answer, and anyone who
-receives the table later can't check that it is what the server sent. This report describes a
-proof of concept for Apache Jena and Fuseki 6.2.0 that closes both gaps. The first part is a
-persistent data version for TDB2: a counter that goes up by one on every committed write
-transaction and is written to TDB2's journal in the same commit as the data, so restarts,
-compaction, and crashes leave it consistent with the data. The second part is a SPARQL
-\code{SERVICE} that attests the solutions of the pattern inside it. Each attestation is a
-PROV-O graph that names the database state, records a SHA-256 digest of the solutions after
-RDF Dataset Canonicalization (RDFC-1.0), and carries a W3C Data Integrity proof. The proof is
-made with the \code{ecdsa-rdfc-2019} cryptosuite by a P-256 or P-384 key that stays on a
-PKCS\#11 token in a separate signer process; an Ed25519 key file with \code{eddsa-rdfc-2022} is
-an option. Optionally, an RFC~3161
-time-stamping authority co-signs the attestation's signature in the background, which fixes
-when the attestation existed independently of the server's clock without delaying the query. If the request was authenticated, the
-attestation also names the user who asked for it. A standalone verifier checks a saved
-result against its attestation without contacting the server. The implementation passes all 65
-tests of the W3C RDFC-1.0 test suite, matches the \code{eddsa-rdfc-2022} and
-\code{ecdsa-rdfc-2019} test vectors, and digests 10,000 solutions, the default maximum, in about one second.
+A SPARQL endpoint answers a query with a table of solutions but says nothing about where the
+solutions came from. A client cannot tell which state of the database produced the answer, and
+anyone who receives the table later cannot check that it is what the server sent. This report
+describes a proof of concept for Apache Jena and Fuseki 6.2.0 that closes both gaps. The first
+part is a persistent data version for TDB2: a counter that increases by one with every
+committed write transaction and is written to TDB2's journal in the same commit as the data,
+so that restarts, compaction, and crashes leave it consistent with the data. The second part is
+a SPARQL \code{SERVICE} that attests the solutions of the pattern inside it. Each result
+attestation is a PROV-O graph that names the database state, records a SHA-256 digest of the
+solutions after RDF Dataset Canonicalization (RDFC-1.0), names the authenticated user who asked
+for it, and carries a W3C Data Integrity proof. By default, the proof is made with the
+\code{ecdsa-rdfc-2019} cryptosuite by a P-256 or P-384 key that never leaves a PKCS\#11 token in
+a separate signer process; an Ed25519 key file with \code{eddsa-rdfc-2022} is an alternative.
+An RFC~3161 time-stamping authority can additionally co-sign the attestation in the
+background, which establishes when the attestation existed independently of the server's clock
+and without delaying the query. A standalone verifier checks a saved result against its
+attestation without contacting the server. The implementation passes all 65 tests of the W3C
+RDFC-1.0 test suite, agrees with the \code{eddsa-rdfc-2022} and \code{ecdsa-rdfc-2019} test
+vectors, and digests 10,000 solutions, the default maximum, in less than 0.4~s.
 \end{abstract}
 
 \setcounter{tocdepth}{1}
@@ -152,7 +152,7 @@ tests of the W3C RDFC-1.0 test suite, matches the \code{eddsa-rdfc-2022} and
 
 SPARQL results often outlive the request that produced them. They end up in reports, caches,
 and data pipelines, and they reach people who never talked to the endpoint. Whoever holds such
-a result later has two questions that the result can't answer by itself: which state of the
+a result later has two questions that the result cannot answer by itself: which state of the
 data it was computed from, and whether it is still exactly what the server returned.
 
 This report describes a proof of concept that answers both questions for Apache
@@ -174,8 +174,8 @@ that recovers it after a crash. For RQ2, Section~\ref{sec:cert} describes a \cod
 that evaluates the pattern inside it, encodes the solutions as RDF, canonicalizes and hashes
 them, and signs a PROV-O attestation with the W3C Data Integrity cryptosuite
 \code{ecdsa-rdfc-2019}~\cite{vcdi,ecdsa}, using a key that is held on a PKCS\#11 token in a
-separate process. It also covers optional timestamps from an RFC~3161 time-stamping authority
-and an offline verifier.
+separate process. The same section covers the recording of the authenticated user, optional
+timestamps from an RFC~3161 time-stamping authority, and the offline verifier.
 Section~\ref{sec:fuseki} shows how the module plugs into Fuseki without changes to Jena,
 Section~\ref{sec:eval} reports tests and measurements, and Section~\ref{sec:discussion}
 discusses what an attestation proves and what it leaves open.
@@ -232,7 +232,8 @@ to co-sign each attestation after the query has returned.}
 \end{figure}
 
 The module runs on Java 21 and is loaded into the unmodified Fuseki server. The verifier is
-a separate library that needs neither TDB2 nor Fuseki (Section~\ref{sec:verification}). Its vocabulary uses the namespace \code{jip:} (\code{https://larsw.xyz/jip/}) and is
+a separate library that needs neither TDB2 nor Fuseki (Section~\ref{sec:verification}). The
+module's vocabulary uses the namespace \code{jip:} (\code{https://larsw.xyz/jip/}) and is
 defined in \file{vocab/jip.ttl}. The Maven group ID is \code{xyz.larsw}, and the Java
 packages are under \code{xyz.larsw.jip}.
 
@@ -242,8 +243,8 @@ Constant width marks code, IRIs, SPARQL, and configuration terms. Italic marks f
 terms at the point where they are defined. The signed statements the module produces are called
 \emph{result attestations}, and a query that asks for one is an \emph{attested query}. The word
 \emph{certificate} is reserved for X.509 certificates, such as the one a time-stamping
-authority signs with. Table~\ref{tab:prefixes} lists the namespace
-prefixes used in the examples.
+authority signs with. Table~\ref{tab:prefixes} lists the namespace prefixes used in the
+examples.
 
 \begin{table}[ht]
 \centering
@@ -276,8 +277,8 @@ Prefix & Namespace IRI \\
 \label{sec:tdb-txn}
 
 TDB2 stores an RDF dataset on disk and gives it ACID transactions with multiple concurrent
-readers and a single writer. The transaction machinery lives in a lower layer called DBOE (Database Operating Environment),
-where a \emph{transaction coordinator} drives a set of \emph{transactional components}: the
+readers and a single writer. The transaction machinery lives in a lower layer called DBOE
+(Database Operating Environment), where a \emph{transaction coordinator} drives a set of \emph{transactional components}: the
 node table, the indexes, the prefix table, and anything else registered with it. Each component
 has an ID and takes part in every transaction through callbacks such as \code{\_begin},
 \code{\_commitPrepare}, \code{\_commit}, and \code{\_commitEnd}.
@@ -295,7 +296,7 @@ A write transaction commits in five steps, all driven by \code{TransactionCoordi
   the coordinator increments its data version counter (Section~\ref{sec:tdb-has}).
 \end{enumerate}
 
-Steps 2 to 5 run while the coordinator holds its lock. Transactions begin under the same lock,
+Steps 2--5 run while the coordinator holds its lock. Transactions begin under the same lock,
 so a new transaction sees either the state before the commit or the state after it.
 
 When a database opens, the coordinator reads the journal. For every transaction that has a
@@ -317,15 +318,15 @@ down.
 The algorithm first computes a \emph{first-degree hash} for each blank node from the quads
 that mention it. A blank node whose first-degree hash is unique gets its label right away. The
 others go through the \emph{N-degree hash} algorithm, which explores paths to neighboring blank
-nodes. That step is exponential in the worst case. The specification discusses datasets built to
-exploit this, under the name \emph{dataset poisoning}, so an implementation has to limit the
-work it is willing to do. Section~\ref{sec:perf} shows how the encoding used here interacts with the two
-steps.
+nodes. That step is exponential in the worst case. The specification discusses datasets built
+to exploit this behavior under the name \emph{dataset poisoning}, so an implementation has to
+limit the work it is willing to do. Section~\ref{sec:perf} shows how the encoding used here
+interacts with the two steps.
 
 \subsection{Data Integrity Proofs}
 \label{sec:di}
 
-The W3C Verifiable Credential Data Integrity specification~\cite{vcdi} describes how to attach
+The W3C specification Verifiable Credential Data Integrity~1.0~\cite{vcdi} describes how to attach
 a proof to a document. A proof names a cryptosuite, a verification method (the key), a
 purpose, and a creation time. The cryptosuite \code{eddsa-rdfc-2022}~\cite{eddsa} works on
 the RDF form of the document. It canonicalizes the proof options and the document separately
@@ -334,12 +335,12 @@ Ed25519~\cite{rfc8032}. The signature is stored as a multibase string in base58b
 recognizable by its leading \code{z}.
 
 The cryptosuite \code{ecdsa-rdfc-2019}~\cite{ecdsa} has the same structure but signs with
-ECDSA on the NIST curves P-256 or P-384. The hash is SHA-256 for P-256 and SHA-384 for P-384, and
-the signature is the concatenation of its two values $r$ and $s$.
+ECDSA on the NIST curves P-256 or P-384. The hash is SHA-256 for P-256 and SHA-384 for
+P-384, and the signature is the concatenation $r \Vert s$ of its two integers.
 
 The verification method used here is a \code{did:key}~\cite{didkey}, a decentralized
 identifier that contains the public key. A verifier reads the key out of the identifier and
-doesn't need to fetch anything. The key type is part of the identifier: Ed25519 keys start with
+does not need to fetch anything. The key type is part of the identifier: Ed25519 keys start with
 \code{z6Mk}, P-256 keys with \code{zDn}, and P-384 keys with \code{z82}.
 
 \subsection{PKCS\#11}
@@ -347,14 +348,14 @@ doesn't need to fetch anything. The key type is part of the identifier: Ed25519 
 
 PKCS\#11~\cite{pkcs11} is the standard C interface to cryptographic tokens: hardware security
 modules (HSMs), smart cards, cloud key services, and software tokens such as
-SoftHSM~\cite{softhsm}. An application loads the token's \emph{module}, a shared library, logs
+SoftHSM2~\cite{softhsm}. An application loads the token's \emph{module}, a shared library, logs
 in with a PIN, finds a key by its label, and asks the token to sign with it
 (\code{C\_SignInit}, \code{C\_Sign}). A private key created on the token with the
 non-extractable flag never leaves it; the application only ever holds a handle. Java reaches
 PKCS\#11 through the JDK's SunPKCS11 provider.
 
-A module normally runs inside the application's process. p11-kit~\cite{p11kit} separates the
-two: \code{p11-kit server} loads the real module in one process and serves it on a Unix
+A module normally runs inside the application's process. The p11-kit tools~\cite{p11kit}
+separate the two: \code{p11-kit server} loads the real module in one process and serves it on a Unix
 socket, and the application loads \code{p11-kit-client.so}, a module that forwards every
 PKCS\#11 call over that socket. To the application it is an ordinary token.
 
@@ -364,13 +365,14 @@ PKCS\#11 call over that socket. To the application it is an ordinary token.
 A signature shows who signed something, but its creation time is whatever the signer wrote
 into it. The Time-Stamp Protocol of RFC~3161~\cite{rfc3161} adds a second party. A client sends a
 \emph{time-stamping authority} (TSA) the hash of some data, the \emph{message imprint}, and the
-TSA returns a \emph{time-stamp token}: a CMS signed structure that contains the imprint, the
+TSA returns a \emph{time-stamp token}: a signed structure in the Cryptographic Message Syntax
+(CMS) that contains the imprint, the
 TSA's time (\code{genTime}), a serial number, and the nonce of the request, signed with a
 certificate whose extended key usage is \code{id-kp-timeStamping}. Anyone who has the data and
 the token can check, offline, that the data existed no later than \code{genTime}, as far as they
-trust the TSA. Code signing and long-term signature formats such as CAdES use the same
-construction to timestamp a signature value; several public TSAs answer such requests free of
-charge.
+trust the TSA. Code signing and long-term signature formats such as CMS Advanced Electronic
+Signatures (CAdES) use the same construction to time-stamp a signature value; several public
+TSAs answer such requests free of charge.
 
 \subsection{PROV-O}
 \label{sec:provo}
@@ -379,8 +381,9 @@ PROV-O~\cite{provo} is the W3C ontology for provenance. It describes \emph{entit
 a dataset or a query result; \emph{activities}, such as a query execution; and \emph{agents},
 which are responsible for activities, such as a server. The attestation in
 Section~\ref{sec:attestation} uses the relations \code{prov:wasGeneratedBy}, \code{prov:used},
-\code{prov:wasDerivedFrom}, \code{prov:wasAssociatedWith}, and \code{prov:specializationOf},
-and the activity timestamps \code{prov:startedAtTime} and \code{prov:endedAtTime}.
+\code{prov:wasDerivedFrom}, \code{prov:wasAssociatedWith}, \code{prov:qualifiedAssociation}, and
+\code{prov:specializationOf}, and the activity times \code{prov:startedAtTime} and
+\code{prov:endedAtTime}.
 
 % ====================================================================================
 \section{A Persistent Data Version for TDB2}
@@ -409,7 +412,7 @@ Each transaction records the version it started from, and \code{getDataVersion()
 The counter exists only in memory and starts at 0 when the coordinator is created. Compaction
 copies it to the new coordinator. & \code{TransactionCoordinator}, \code{DatabaseOps.compact} \\
 Nothing on disk changes exactly once per commit. The journal is truncated after every commit,
-and the index files change only when data changes and are rewritten by compaction.
+and the index files change only when the data change and are rewritten by compaction.
 & \code{TransactionCoordinator}, \code{DatabaseOps} \\
 A running coordinator accepts extra components through \code{modifyConfig} and
 \code{addExternal}, which \code{jena-text} also uses. Compaction moves them to the new
@@ -421,7 +424,7 @@ Fuseki builds the datasets in its configuration file in \code{parseConfig}, befo
 \end{tabularx}
 \end{table}
 
-The internal counter behaves correctly within one process, but it isn't unique over time:
+The internal counter behaves correctly within one process, but it is not unique over time:
 version 5 before a restart and version 5 after a restart can describe different data. The
 module still exposes it, as the function \code{jip:tdbDataVersion()}, so the two counters can
 be compared.
@@ -435,7 +438,7 @@ The persistent version has to meet six requirements:
 \item A pair of database ID and version identifies exactly one committed state, for the
   lifetime of the database.
 \item Every committed write transaction increments the version by one. Reads and aborted
-  writes don't change it.
+  writes do not change it.
 \item After a crash, the version on disk matches the data on disk.
 \item The version survives restarts and compaction.
 \item A transaction sees the version that belongs to its data snapshot.
@@ -447,8 +450,9 @@ The persistent version has to meet six requirements:
 
 The persistent counter is a DBOE component, \code{DataVersionComponent}, added to the TDB2
 coordinator with \code{addExternal}. Its ID is \code{0x50524F56}, the ASCII bytes of
-\enquote{PROV}, well outside the range TDB2 uses for its own components. Table~\ref{tab:lifecycle} shows what the
-component does in each callback, and Example~\ref{lst:component} shows the commit path.
+\enquote{PROV}, well outside the range TDB2 uses for its own components.
+Table~\ref{tab:lifecycle} shows what the component does in each callback, and
+Example~\ref{lst:component} shows the commit path.
 
 \begin{table}[ht]
 \centering
@@ -504,14 +508,14 @@ protected void _commitEnd(TxnId txnId, TxnVersion state) {
 \end{lstlisting}
 
 The component increments the version on every committed write transaction, including one that
-changes nothing. That matches TDB2's internal counter, so within one process the difference
-between the persistent and the internal version stays constant, and a test checks this. It
-also means that equal versions imply equal data, while different versions don't necessarily
+changes nothing. This matches TDB2's internal counter, so within one process the difference
+between the persistent and the internal version stays constant; a test checks this. It also
+means that equal versions imply equal data, whereas different versions do not necessarily
 mean different data.
 
 \code{\_begin}, \code{\_commit}, and \code{\_commitEnd} run under the coordinator lock.
 \code{\_commitPrepare} runs outside it, but TDB2 allows only one writer at a time, so the
-committed version can't change between prepare and commit end. A transaction therefore sees
+committed version cannot change between prepare and commit end. A transaction therefore sees
 the version that belongs to its snapshot (R5). The test
 \code{readersSeeTheirSnapshotVersion} checks this with readers that hold their transactions
 open while a writer commits.
@@ -575,7 +579,7 @@ keep working.
 \code{PreOpenJournalRecovery} reads the journal and never modifies it. It walks the entries
 and remembers the version from the most recent REDO record with the component's ID. A
 following COMMIT confirms that version and an ABORT discards it. A torn entry at the end of
-the journal stops the scan; it can't be followed by a COMMIT, so nothing after it counts. If
+the journal stops the scan; it cannot be followed by a COMMIT, so nothing after it counts. If
 the last confirmed version is ahead of the state file, the state file is advanced. If the
 state file is missing but the journal holds a confirmed version, the file is recreated with a
 new database ID and a warning in the log. TDB2's own recovery then runs as usual. The test
@@ -588,11 +592,11 @@ calls the component's own recovery callbacks, and the component applies the reco
 \subsection{Identity}
 \label{sec:identity}
 
-A version number identifies a state only within one database. When the state
-file is created, the component generates a random UUID and stores it next to the counter. A
+A version number identifies a state only within one database. When the state file is
+created, the component generates a random UUID and stores it next to the counter. A
 \emph{dataset state} is named \code{urn:uuid:}\textit{db}\code{\#v}\textit{N}, and the pair of
 database ID and version is unique (R1). A database rebuilt from a dump gets a new state file
-and a new UUID, so its versions can't be confused with the old ones. The configuration can name
+and a new UUID, so its versions cannot be confused with the old ones. The configuration can name
 the logical dataset with \code{jip:datasetIRI}; every dataset state is then a
 \code{prov:specializationOf} that IRI.
 
@@ -651,7 +655,7 @@ Design & Why it was rejected \\
 \midrule
 Expose TDB2's \code{dataVersion} directly & It restarts at 0, so it violates R1 and R4. \\
 Keep the counter in TDB2's prefix table & It would be atomic with the data, but writing it
-needs a listener, listeners don't survive compaction, and the counter could leak into the
+needs a listener, listeners do not survive compaction, and the counter could leak into the
 dataset's prefixes. \\
 Wrap the dataset and count commits in a separate file & The file and the data are not written
 atomically, so a crash can separate them (R3). \\
@@ -697,15 +701,15 @@ once per incoming row, as it does for some joins, each call gets its own attesta
 The executor evaluates the inner pattern and reads the persistent version in the same read
 transaction. That is the query's own transaction when there is one, which is always the case
 in Fuseki, and a new one otherwise. Inside a write transaction it refuses to run, because
-uncommitted changes don't have a version yet.
+uncommitted changes do not have a version yet.
 
 The executor holds all solutions in memory to hash them. The server-level setting
 \code{jip:maxSolutions} caps their number, at 10,000 by default. A larger result fails the
-query; truncating it would produce a valid attestation for a result the client didn't ask
-for.
+query, because truncating it would produce a valid attestation for a result the client did not
+ask for.
 
 The attestation IRI is bound to \code{?attestation} on every row. Because the executor adds the
-variable, \code{SELECT *} doesn't include it, and the query has to project it by name.
+variable, \code{SELECT *} does not include it, and the query has to project it by name.
 Table~\ref{tab:params} lists the two parameters the service IRI accepts. They are written
 as a query string, for example \code{<urn:x-provenance:attest?var=c\&empty=none>}.
 
@@ -729,13 +733,13 @@ at that version. \\
 \end{table}
 
 If the dataset has no persistent version, the query fails. With \code{SERVICE SILENT}, the
-incoming row passes through without an attestation instead. Fuseki reports errors raised during
-query execution as HTTP 500, and that includes refused attestations.
+incoming row passes through without an attestation instead. Fuseki reports errors raised
+during query execution as HTTP 500, including refused attestations.
 
 \subsection{Encoding Solutions as RDF}
 \label{sec:encoding}
 
-RDFC-1.0 takes an RDF dataset as input, and a solution sequence isn't one. The module encodes
+RDFC-1.0 takes an RDF dataset as input, and a solution sequence is not one. The module encodes
 the solutions with the result-set vocabulary (\code{rs:}) that the SPARQL test suites use to
 write down expected results. Example~\ref{lst:encoding} shows the encoding of the first
 solution of the demo query.
@@ -760,10 +764,10 @@ Row order is part of the encoding only when the inner pattern is ordered, which 
 slice, distinct, reduced, project, extend, and assign operations. Each solution then gets an
 \code{rs:index}. Without \code{ORDER BY}, the order in which TDB2 returns rows depends on
 internal node IDs and can change after compaction. An unordered encoding has no index, so its
-digest doesn't depend on row order at all.
+digest does not depend on row order at all.
 
 A blank node that appears as a value maps to one RDF blank node per distinct label in the
-result. The labels don't affect the digest, but two rows that share a blank node still share
+result. The labels do not affect the digest, but two rows that share a blank node still share
 it after encoding. RDFC-1.0 is defined for RDF 1.1, so the encoder rejects the triple terms and
 the literals with a base direction that RDF 1.2~\cite{rdf12} adds.
 
@@ -774,8 +778,8 @@ Jena 6.2.0 has no RDFC-1.0 implementation, so the module uses titanium-rdfc
 3.0.0~\cite{titaniumrdfc} through a small adapter that converts Jena quads to the library's
 input. The Fuseki server jar already contains other versions of the
 \code{com.apicatalog.rdf} packages, so the library is shaded into the module jar under a
-relocated package name. Each canonicalization has a time limit of 10 seconds, which stops
-poison datasets. The digest is the SHA-256 hash of the canonical N-Quads, written as
+relocated package name. Each canonicalization has a time limit of 10~s, which stops poison
+datasets. The digest is the SHA-256 hash of the canonical N-Quads, written as
 hexadecimal.
 
 The digest depends only on the attested solutions and on whether they are ordered. Two demo
@@ -795,8 +799,9 @@ pattern as SPARQL text (\code{jip:servicePattern}), and the whole query
 (\code{jip:queryText}). The execution used, and the sequence was derived from, the dataset
 state \code{<DB\#v1>}. That state carries \code{jip:dataVersion} and specializes the
 configured dataset IRI. The server's key, as a \code{did:key}, is the software agent
-associated with the execution. If a time-stamping authority is configured, the attestation also
-links to an RFC~3161 timestamp with \code{jip:timestamp} (Section~\ref{sec:timestamps}).
+associated with the execution, and so is the authenticated user, if any
+(Section~\ref{sec:requester}). If a time-stamping authority is configured, the attestation
+also links to an RFC~3161 timestamp with \code{jip:timestamp} (Section~\ref{sec:timestamps}).
 
 \begin{figure}[ht]
 \centering
@@ -897,29 +902,30 @@ c:requester a prov:Agent ;
 \end{lstlisting}
 
 The attestation holds the digest of the rows and never the rows themselves, so its size
-doesn't grow with the result. It does contain the query text, which has privacy implications
+does not grow with the result. It does contain the query text, which has privacy implications
 (Section~\ref{sec:risks}).
 
 \subsection{The Requester}
 \label{sec:requester}
 
 An attestation can say who asked for it. If the HTTP request was authenticated, the query
-execution is associated with a second agent besides the server's key: \code{<C\#requester>},
-a \code{prov:Agent} with the authenticated name (\code{jip:principal}) and, if known, the
-authentication scheme (\code{jip:authenticationScheme}). A qualified association gives it the
+execution is associated with a second agent besides the server's key. This agent,
+\code{<C\#requester>}, is a \code{prov:Agent} with the authenticated name
+(\code{jip:principal}) and, if known, the authentication scheme
+(\code{jip:authenticationScheme}). A qualified association gives it the
 role \code{jip:requester}, which separates it from the server agent. The statement is part of
 the signed document, so the server vouches that it authenticated this principal; it says
-nothing about how strong that authentication was. Anonymous requests have no requester, and the
-setting \code{jip:recordRequester} (or \code{PROVENANCE\_RECORD\_REQUESTER}) turns recording
-off. The verifier reports the requester (Example~\ref{lst:verify}).
+nothing about how strong that authentication was. Anonymous requests have no requester.
+Recording can be turned off with the setting \code{jip:recordRequester} or the environment
+variable \code{PROVENANCE\_RECORD\_REQUESTER}. The verifier reports the requester (Example~\ref{lst:verify}).
 
 The module takes the requester from the servlet request (\code{getRemoteUser()}), so it works
 with whatever authenticated the request: Fuseki's Shiro module, its password file, or a
-bearer-token filter. Fuseki doesn't pass the HTTP user into the query's context, but it
+bearer-token filter. Fuseki does not pass the HTTP user into the query's context, but it
 evaluates the query on the request's thread, so a servlet filter records the user per thread
 and the attest executor reads it there. The filter must run after the authentication filter.
 Fuseki modules add filters in two steps, \code{prepare} and \code{configured}; authentication
-modules use the first, so the module adds its filter in the second. Shiro doesn't report the
+modules use the first, so the module adds its filter in the second. Shiro does not report the
 scheme through \code{getAuthType()}, so the filter falls back to the scheme of the
 \code{Authorization} header. Embedded applications can put the requester into the query context
 instead.
@@ -938,21 +944,21 @@ concatenation, the signer computes
   \mathit{proofValue} &= \texttt{z} \;\Vert\; \mathrm{base58btc}(\mathrm{Sign}_{\mathit{sk}}(h)),
 \end{align*}
 where $H$ is SHA-256 for Ed25519 and P-256 keys and SHA-384 for P-384 keys, and
-$\mathrm{Sign}$ is Ed25519 or ECDSA with $H$, giving $r \Vert s$.
-and adds the proof options, the proof value, and the triple \code{<C> sec:proof \_:proof} to
-the graph. A verifier removes the proof node's triples and the \code{sec:proof} link to
+$\mathrm{Sign}$ is Ed25519, or ECDSA with $H$, which yields $r \Vert s$. The signer then adds
+the proof options, the proof value, and the triple \code{<C> sec:proof \_:proof} to the
+graph. A verifier removes the proof node's triples and the \code{sec:proof} link to
 recover $D$, drops the proof value to recover $P$, and checks the signature with the public
 key from the verification method. It also checks that the cryptosuite fits the key type, so
-an ECDSA signature can't pass as \code{eddsa-rdfc-2022} or the other way round.
+an ECDSA signature cannot pass as \code{eddsa-rdfc-2022} or the other way round.
 
 In the JSON-LD form used by Verifiable Credentials, the proof sits in a separate named graph,
 because the security context declares \code{sec:proof} with an \code{@graph} container. Here
 the proof triples sit in the attestation graph, and the verifier separates them by structure.
 The hash and signature computation is the cryptosuite's, unchanged: the proof options
 canonicalize to the bytes in the specifications' test vectors, and the module reproduces or
-verifies the vectors' proof values (Section~\ref{sec:conformance}). Off-the-shelf Verifiable Credential
-verifiers still won't accept an attestation as it is, because they expect a credential document
-in JSON-LD.
+verifies the vectors' proof values (Section~\ref{sec:conformance}). Off-the-shelf Verifiable
+Credential verifiers nevertheless do not accept an attestation as it is, because they expect a
+credential document in JSON-LD.
 
 \subsection{Timestamps}
 \label{sec:timestamps}
@@ -971,6 +977,7 @@ be checked offline. The executor accepts a reply only if it grants a token for t
 imprint and nonce and the token's signature verifies.
 
 The token is added after signing, as a node of its own:
+\needspace{6\baselineskip}
 \begin{lstlisting}[language=Turtle, numbers=none]
 <C> jip:timestamp _:t .
 _:t a jip:RFC3161Timestamp ;
@@ -981,33 +988,33 @@ _:t a jip:RFC3161Timestamp ;
 Only the token is evidence. The authority and the time are copies for queries over the
 attestation store; the verifier reports what the token says. The timestamp triples are not part
 of the signed document $D$: a verifier removes the \code{jip:timestamp} links and the triples
-of the timestamp nodes before it checks the proof. Removing them can't hide a change, because
+of the timestamp nodes before it checks the proof. Removing them cannot hide a change, because
 removing any signed triple makes the proof fail.
 
 The setting \code{jip:timestampAuthorities} lists TSA URLs in priority order. For each
 attestation they are asked one at a time, each with its own timeout
-(\code{jip:timestampTimeout}, 5 seconds by default), and the first valid token is used. A TSA
-that fails is moved to the end of the list for 60 seconds, so one that is down costs one
-timeout a minute rather than one per attestation; it is still tried if all others fail.
+(\code{jip:timestampTimeout}, 5~s by default), and the first valid token is used. A TSA that
+fails is moved to the end of the list for 60~s, so that a TSA that is down costs one timeout a
+minute rather than one per attestation; it is still tried if all others fail.
 
 A TSA request is a network round trip to a third party, typically a few hundred milliseconds,
 and several timeouts if TSAs are down. By default (\code{jip:timestampMode async}) the query
-doesn't wait for it. The executor stores the signed attestation and, in the same write
+does not wait for it. The executor stores the signed attestation and, in the same write
 transaction, records it as pending with a triple
 \code{<C> jip:timestampPendingSince "..."} in the store's graph
 \code{jip:pendingTimestamps}. The query returns at once. A background thread fetches the token,
 then adds the timestamp triples to the attestation graph and removes the pending triple in one
-transaction, and only if the attestation is still pending, so an attestation can't receive two
-tokens. If no TSA answers, it tries again after 5, 15, and 30 seconds, 1, 2, and 5 minutes, and
-then every 10 minutes. One thread per configuration fetches the tokens one after another,
+transaction, and only if the attestation is still pending, so an attestation cannot receive two
+tokens. If no TSA answers, the thread tries again after 5, 15, and 30~s, after 1, 2, and
+5~min, and then every 10~min. One thread per configuration fetches the tokens one after another,
 because public TSAs limit request rates. Because the pending state is in the store, a restart
 loses nothing: when Fuseki has started, the module queues the pending attestations again.
 
 While an attestation is pending, its endpoint answers \code{202 Accepted} instead of the
 attestation, with \code{Retry-After} set to the seconds until the next attempt and a short JSON
 status (Example~\ref{lst:pending}). A client fetches the attestation again after that time and
-gets it with its timestamp. The status 202 fits better than 503: the server is healthy and
-the attestation exists, its processing just isn't finished.
+gets it with its timestamp. Status 202 is more appropriate than 503: the server is healthy
+and the attestation exists; only its processing is unfinished.
 
 \needspace{6\baselineskip}
 \begin{lstlisting}[basicstyle=\ttfamily\footnotesize, caption={The attestation endpoint right after the attested query of the demo.}, label={lst:pending}]
@@ -1020,12 +1027,12 @@ Content-Type: application/json
 \end{lstlisting}
 
 The policy (\code{jip:timestampPolicy}) decides what happens when no TSA answers. With
-\code{optional}, the default, retries stop after \code{jip:timestampMaxWait} (10 minutes by
+\code{optional}, the default, retries stop after \code{jip:timestampMaxWait} (10~min by
 default) and the attestation is released without a timestamp. With \code{required}, the
 attestation stays pending and the retries continue, so the endpoint keeps answering 202 until a
-TSA answers. The mode \code{sync} keeps the earlier behavior: the query waits for the token;
-without one, \code{optional} issues the attestation as it is and \code{required} fails the
-attestation. Environment variables (\code{PROVENANCE\_TSA\_URLS}, \code{\_MODE},
+TSA answers. In the synchronous mode (\code{jip:timestampMode sync}), the query waits for the
+token instead; without one, \code{optional} issues the attestation as it is and
+\code{required} refuses the attestation. Environment variables (\code{PROVENANCE\_TSA\_URLS}, \code{\_MODE},
 \code{\_POLICY}, \code{\_TIMEOUT}, and \code{\_MAX\_WAIT}) override the settings. Without a TSA
 list, attestations have no timestamp and are never pending.
 
@@ -1033,9 +1040,9 @@ The read-only SPARQL view of the attestation store (Section~\ref{sec:store}) is 
 service, so it shows a pending attestation already, signed but without its timestamp; the
 \code{jip:pendingTimestamps} graph tells the two apart.
 
-The protocol and CMS handling come from BouncyCastle~\cite{bouncycastle}, because the JDK has no
-public API for either. BouncyCastle also handles key encodings: PKCS\#8 and PEM for the local
-Ed25519 key, compressed curve points for P-256 and P-384 \code{did:key}s, and the self-signed
+The protocol and CMS handling come from Bouncy Castle~\cite{bouncycastle}, because the JDK has
+no public API for either. Bouncy Castle also handles key encodings: PKCS\#8 and the PEM text
+format for the local Ed25519 key, compressed curve points for P-256 and P-384 \code{did:key}s, and the self-signed
 certificate of a key created on a PKCS\#11 token. Signing and verifying use the JDK.
 
 \subsection{Keys}
@@ -1052,14 +1059,14 @@ are built in.
   (directly or from a file), and the key's label. With \code{PROVENANCE\_PKCS11\_GENERATE} set
   to a curve, the module creates the key pair on the token if it is missing, together with a
   self-signed certificate, because SunPKCS11 only lists private keys that have one.
-\item[local] An Ed25519 key in a PKCS\#8 PEM file and \code{eddsa-rdfc-2022}, as in earlier
-  versions. The path comes from \code{PROVENANCE\_SIGNING\_KEY} or \code{jip.signingKey}, and a
-  key is generated on first start if the file doesn't exist.
+\item[local] An Ed25519 key in a PKCS\#8 PEM file, with \code{eddsa-rdfc-2022}. The path comes
+  from \code{PROVENANCE\_SIGNING\_KEY} or \code{jip.signingKey}, and a
+  key is generated on first start if the file does not exist.
 \end{description}
 
 Another mechanism, such as a cloud key service or a remote signing service, is one more
 provider. The PKCS\#11 signer uses ECDSA because Java 21's SunPKCS11 has no EdDSA support, and
-EdDSA support in tokens varies: SoftHSM, for example, offers it only in builds that enable it,
+EdDSA support in tokens varies: SoftHSM2, for example, offers it only in builds that enable it,
 and key generation fails in some of them~\cite{softhsm704}. P-256 is supported by practically
 every token, and \code{ecdsa-rdfc-2019} is the W3C counterpart of \code{eddsa-rdfc-2022}.
 
@@ -1068,12 +1075,12 @@ In the Docker setup the token is in a process and a container of its own
 and has no network at all. The Fuseki container loads \code{p11-kit-client.so}, and the two
 share only the volume that holds the socket. On first start the signer initializes its token,
 and the module creates the P-256 key on it through the socket, so the key is generated inside
-the token and never exported. For each attestation, the module sends $h$ and gets back $r
-\Vert s$. If the signer process restarts, the next signature fails, and the module reconnects
-and tries again. SunPKCS11 can't re-initialize a module it has already loaded, so the module
+the token and never exported. For each attestation, the module sends $h$ and receives
+$r \Vert s$. If the signer process restarts, the next signature fails, and the module reconnects
+and tries again. SunPKCS11 cannot re-initialize a module it has already loaded, so the module
 loads a fresh copy of \code{p11-kit-client.so} from a new path, which the system loader treats
 as a separate library with a new connection. The p11-kit versions on both sides must match:
-a version 0.26 client and a 0.25 server couldn't create keys, so both images use the same
+a version 0.26 client and a 0.25 server could not create keys, so both images use the same
 Ubuntu release.
 
 \begin{figure}[htb]
@@ -1119,7 +1126,7 @@ Ubuntu release.
 \end{tikzpicture}
 \caption{Process separation of the PKCS\#11 signer in the Docker setup. The private key exists
 only inside the token in the signer container, which has no network. Fuseki holds a handle and
-the PIN and can ask for signatures, but it can't read the key. In production, the signer's
+the PIN and can ask for signatures, but it cannot read the key. In production, the signer's
 module is an HSM's PKCS\#11 library instead of SoftHSM2.}
 \label{fig:separation}
 \end{figure}
@@ -1144,8 +1151,8 @@ key type, cryptosuite, and signer, as Example~\ref{lst:key} shows.
 }
 \end{lstlisting}
 
-Since a \code{did:key} contains its own public key, anyone can produce an attestation that
-verifies against a key they generated. A verifier must therefore compare the key with one it
+Because a \code{did:key} contains its own public key, anyone can produce an attestation that
+verifies against a key they generated themselves. A verifier must therefore compare the key with one it
 already trusts, obtained through another channel. The verifier's \code{-{}-expect-key} option
 does this comparison.
 
@@ -1164,15 +1171,16 @@ interface, \code{AttestationStore}, so a file-based or remote store could replac
 \label{sec:verification}
 
 The verifier needs only the saved results and the attestation. Its checks are in a library,
-\file{jip-verifier}, which depends on \code{jena-arq}, titanium-rdfc, and BouncyCastle but not
-on TDB2, Fuseki or the signing key, so other Java programs can verify attestations themselves. A command,
-\longcode{xyz.larsw.jip.cli.Verify}, wraps the library; it is packaged as a
+\file{jip-verifier}, which depends on \code{jena-arq}, titanium-rdfc, and Bouncy Castle but not
+on TDB2, Fuseki, or the signing key, so other Java programs can verify attestations
+themselves. A command, \longcode{xyz.larsw.jip.cli.Verify}, wraps the library; it is packaged as a
 self-contained jar, and the Docker image runs it with the command \code{verify}. The
 verification works in five steps:
 
 \begin{enumerate}
 \item Check the proof against the key in the \code{did:key}, over the attestation without its
-  timestamps, with the cryptosuite that fits the key type. With \code{-{}-expect-key}, also check that the key is the expected one.
+  timestamps, with the cryptosuite that fits the key type. With \code{-{}-expect-key}, also
+  check that the key is the expected one.
 \item Check each timestamp: the token's imprint must be the hash of the proof's signature, the
   TSA's signature must verify with the certificate in the token, and that certificate must be
   a time-stamping certificate valid at \code{genTime}. Then chain the TSA certificate, at
@@ -1180,19 +1188,20 @@ verification works in five steps:
   (\code{-{}-tsa-trust system}, the default), the CA certificates in a PEM file, or none
   (\code{-{}-tsa-trust none}).
 \item Select the rows that carry the attestation IRI. Their number must equal the
-  attestation's \code{jip:solutionCount}. For an attestation with zero solutions, accept at most one row, and
-  only if that row binds none of the attested variables.
+  attestation's \code{jip:solutionCount}. For an attestation with zero solutions, accept at most
+  one row, and only if that row binds none of the attested variables.
 \item Rebuild the \code{rs:} encoding from the attested variables, with \code{rs:index} only
   if the attestation says the result is ordered.
 \item Canonicalize the encoding, hash it, and compare the digest with the attestation's.
 \end{enumerate}
 
-The short options \code{-r}, \code{-c}, and \code{-k} stand for \code{-{}-results},
-\code{-{}-cert}, and \code{-{}-expect-key}. A broken timestamp makes the attestation invalid.
-An untrusted one is reported but only fails verification with \code{-{}-require-timestamp},
-which demands at least one valid timestamp that isn't untrusted. The verifier exits with
-status 0 when everything matches, 1 when something doesn't, and 2 when the input
-can't be read. Example~\ref{lst:verify} shows a successful run, followed by a run on the same
+The verifier also reports the requester, if the attestation names one. The short options
+\code{-r}, \code{-a}, and \code{-k} stand for \code{-{}-results}, \code{-{}-attestation}, and
+\code{-{}-expect-key}. A broken timestamp makes the attestation invalid. An untrusted one is
+reported, but it fails verification only with \code{-{}-require-timestamp}, which demands at
+least one valid timestamp that is not untrusted. The verifier exits with
+status 0 when everything matches, 1 when something does not, and 2 when the input
+cannot be read. Example~\ref{lst:verify} shows a successful run, followed by a run on the same
 results with one email address changed.
 
 \needspace{19\baselineskip}
@@ -1227,12 +1236,12 @@ also arrive in the attested order.
 \label{sec:fuseki}
 
 The module is loaded through two of Jena's plug-in mechanisms and changes nothing in Jena or
-Fuseki (R6).
-Jena's subsystem loader finds \code{InitJIP}, a \code{JenaSubsystemLifecycle}, through the
+Fuseki (R6). Jena's subsystem loader finds \code{InitJIP}, a \code{JenaSubsystemLifecycle}, through the
 Java \code{ServiceLoader}. It registers the assembler for \code{jip:VersionedDatasetTDB2}, the
 two functions, and the service executor. Fuseki finds \code{ProvenanceFusekiModule}, a
-\code{FusekiAutoModule}, the same way. It adds the servlet for \code{/\$/provenance/*} and the
-header filter, and logs the \code{did:key} when the server starts. Putting the jar on Fuseki's
+\code{FusekiAutoModule}, the same way. It adds the servlet for \code{/\$/provenance/*}, the
+header filter, and the requester filter (Section~\ref{sec:requester}), and logs the
+\code{did:key} when the server starts. Putting the jar on Fuseki's
 classpath is enough to load both. Example~\ref{lst:config} shows the relevant part of the
 Fuseki configuration.
 
@@ -1286,20 +1295,23 @@ dataset. \\
 
 The Maven build has three modules: the verifier library, the verifier command, and the Fuseki
 module. The Fuseki module's jar is the one Fuseki loads. Jena and Fuseki are \code{provided}
-dependencies, and the verifier library and titanium-rdfc are shaded in, the latter relocated.
-Fuseki's server jar already contains BouncyCastle's \code{bcprov}, unrelocated, so the module
+dependencies; the verifier library and titanium-rdfc are shaded in, the latter relocated.
+Fuseki's server jar already contains Bouncy Castle's \code{bcprov}, unrelocated, so the module
 shades in only \code{bcpkix} and \code{bcutil} at the same version (1.84) and links against
-Fuseki's copy; none of their classes overlap with the server jar. The jar grows from 141~KB to
-about 1.9~MB. The verifier command is a separate jar that bundles Jena and BouncyCastle. The Docker image is built in two stages. The first stage
-builds both jars in the \longcode{maven:3.9-eclipse-temurin-21} image and runs the test suite on Java
-21. The second stage starts from \longcode{eclipse-temurin:21-jre} and downloads
-\file{jena-fuseki-server-6.2.0.jar} from Maven Central, checked against a pinned SHA-256
-hash. The server runs as an unprivileged user, with one volume for \file{/fuseki} and port
-3030. The runtime image adds \code{p11-kit-client.so} and points the PKCS\#11 signer at the
-signer's socket. A second image, the signer, holds SoftHSM2 and \code{p11-kit server}; Docker
-Compose starts it first, without network, and shares its socket volume with Fuseki. The build
-stage installs SoftHSM2 too, so the PKCS\#11 tests run against a real token. The image's entry point also runs the verifier, so a client can check attestations with
-the same image without installing Java.
+Fuseki's copy; none of their classes overlap with the server jar. These dependencies enlarge the
+jar from 141~KB to about 1.9~MB. The verifier command is a separate jar that bundles Jena and
+Bouncy Castle.
+
+The Docker image is built in two stages. The first stage builds both jars in the
+\longcode{maven:3.9-eclipse-temurin-21} image and runs the test suite on Java~21; it also
+installs SoftHSM2, so that the PKCS\#11 tests run against a real token. The second stage starts
+from \longcode{eclipse-temurin:21-jre-noble} and downloads \file{jena-fuseki-server-6.2.0.jar}
+from Maven Central, checked against a pinned SHA-256 hash. The server runs as an unprivileged
+user, with one volume for \file{/fuseki} and port 3030. The runtime image adds
+\code{p11-kit-client.so} and points the PKCS\#11 signer at the signer's socket. A second image,
+the signer, holds SoftHSM2 and \code{p11-kit server}; Docker Compose starts it first, without
+network access, and shares its socket volume with Fuseki. The image's entry point also runs the
+verifier, so that a client can check attestations with the same image without installing Java.
 
 % ====================================================================================
 \section{Evaluation}
@@ -1316,7 +1328,7 @@ because they need SoftHSM2, and the others pass.
 \centering
 \caption{Test classes and what they cover.}
 \label{tab:tests}
-\small
+\footnotesize
 \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{50mm}r>{\raggedright\arraybackslash}X@{}}
 \toprule
 Test class & Tests & Coverage \\
@@ -1330,7 +1342,7 @@ duplicates, blank nodes, empty results, rejection of RDF 1.2 terms. \\
 \code{did:key} encoding, base58 encoding. \\
 \code{EcdsaDataIntegrityProofTest} & 14 & The \code{ecdsa-rdfc-2019} test vectors for P-256
 and P-384: \code{did:key}s, hashes, canonical proof configuration, hash data, the vector
-signature, signing with the vector key, and a cryptosuite that doesn't fit the key. \\
+signature, signing with the vector key, and a cryptosuite that does not fit the key. \\
 \code{SigningKeyTest} & 7 & The signing key against the test vectors, PEM round trip and
 persistence, keys written by OpenSSL and the JDK, rejection of other key types and mismatched
 public keys. \\
@@ -1346,7 +1358,7 @@ cooldown order, configuration parsing. \\
 \code{AttestServiceTest} & 21 & Round trips for ordered and unordered results, tampering,
 both empty-result modes, variable names, the cap, unversioned datasets and \code{SILENT}, the
 write-transaction refusal, versions after updates, correlated calls, timestamped
-attestations, both timestamp policies in both modes, a query that doesn't wait for a held-back
+attestations, both timestamp policies in both modes, a query that does not wait for a held-back
 TSA, resuming pending timestamps after a restart without a second token, the requester from
 the query context and from the request thread, signed and verified, turned off, and absent for
 anonymous requests. \\
@@ -1371,8 +1383,7 @@ Total & 166 & \\
 The W3C test suite for RDFC-1.0~\cite{rdfcsuite} is included in the repository with its
 license and source commit. All 65 tests pass. They include the tests that check the blank node
 mapping, the variants that use SHA-384, the tests for N-Quads escaping, and the negative test
-with a poison graph, which has to fail within a time limit. The test uses a 3-second limit
-for it.
+with a poison graph, which has to fail within a time limit; the test uses a limit of 3~s.
 
 For the signature, the module reproduces the test vectors of the Data Integrity EdDSA
 specification~\cite{eddsa}: the key identifiers, the two SHA-256 hashes, the canonical proof
@@ -1387,7 +1398,8 @@ with the vector's key and verifying the result.
 
 The script \file{scripts/demo.sh} runs against the Docker image. Table~\ref{tab:demo} shows a
 run that started with empty volumes, with the PKCS\#11 signer in its own container, HTTP Basic
-authentication, and the default TSA list: DigiCert, Sectigo, and FreeTSA.
+authentication, and the default TSA list: DigiCert, Sectigo, and FreeTSA. The step numbers are
+those the script prints.
 
 \begin{table}[ht]
 \centering
@@ -1419,13 +1431,13 @@ solutions at version 2, requested by bob, verified. \\
 8 & Attest a pattern with no match & One row with only \code{?attestation}; attestation with 0
 solutions, verified. \\
 9 & Compare the counters & Persistent 2, internal 2. \\
-10 & Restart the container & Persistent 2, internal 0. \\
-11 & Insert one more person & Persistent 3, internal 1. \\
-12 & Query the attestation store & Three attestations, at versions 1, 2, and 2, requested by
+10 & Restart the container, then insert one more person & After the restart: persistent 2,
+internal 0. After the insert: persistent 3, internal 1. \\
+11 & Query the attestation store & Three attestations, at versions 1, 2, and 2, requested by
 alice, bob, and alice, each timestamped by DigiCert. \\
-13 & Put an unreachable TSA first in the list, query again & The server logs the failed TSA
+12 & Put an unreachable TSA first in the list, query again & The server logs the failed TSA
 and falls back to DigiCert; the new attestation at version 3 verifies. \\
-14 & Restart the signer container, query again & The first signature fails, the module
+13 & Restart the signer container, query again & The first signature fails, the module
 reconnects with a fresh copy of \code{p11-kit-client.so}, and the new attestation, signed with
 the same key, verifies. \\
 \bottomrule
@@ -1436,10 +1448,10 @@ the same key, verifies. \\
 \label{sec:perf}
 
 Apart from evaluating the query, the only step of attestation whose cost grows with the
-number of solutions is the digest.
-The capacity test digests 10,000 solutions of two variables after a warm-up run on 100
-solutions. Table~\ref{tab:perf} shows three consecutive runs on an otherwise idle Intel Core Ultra 7
-165H with OpenJDK 25.0.5. The digest runs on one thread.
+number of solutions is the digest. The capacity test digests 10,000 solutions of two variables
+after a warm-up run on 100 solutions. Table~\ref{tab:perf} shows three consecutive runs, each
+in a fresh JVM, of version 0.14.0 on a lightly loaded desktop with an Intel Core Ultra~7 265
+and OpenJDK 25.0.4.1. The digest runs on one thread.
 
 \begin{table}[ht]
 \centering
@@ -1450,9 +1462,9 @@ solutions. Table~\ref{tab:perf} shows three consecutive runs on an otherwise idl
 \toprule
 Result & Time (ms) \\
 \midrule
-Unordered, all rows distinct & 1,067 to 1,112 \\
-Ordered, all rows distinct & 699 to 803 \\
-Unordered, 10 distinct rows repeated 1,000 times & 814 to 855 \\
+Unordered, all rows distinct & 361--380 \\
+Ordered, all rows distinct & 227--230 \\
+Unordered, 10 distinct rows repeated 1,000 times & 279--282 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1462,7 +1474,7 @@ The ordered case is the fastest because of how RDFC-1.0 assigns labels
 node and to its own binding nodes, all blank, so all 10,000 solution nodes have the same
 first-degree hash and each one needs the N-degree step. In an ordered encoding, \code{rs:index}
 gives each solution node a unique first-degree hash, and that step is skipped. All three cases
-stay well below the 10-second limit, which leaves room for wider rows. Solutions are held in
+stay well below the limit of 10~s, which leaves room for wider rows. Solutions are held in
 memory up to the cap, and the attestation store adds one write transaction per attestation.
 
 % ====================================================================================
@@ -1474,24 +1486,25 @@ memory up to the cap, and the attestation store adds one write transaction per a
 
 A valid attestation, checked against a trusted key, shows that the holder of that key stated
 that these rows were the solutions of this pattern against a given database state at a given
-time. It doesn't show that the server evaluated the query correctly or that the data is true.
-If the attestation names a requester, the server also states that it authenticated that
-user for this query; the statement is only as good as the server's authentication. A
-compromised server can sign anything while it is compromised. With the PKCS\#11 signer it
-can't take the key away, though: the key stays on the token, so access ends when the server is
-cleaned up, and an HSM can log or limit what is signed. The times inside the attestation come from the
-server's clock. With a timestamp from a TSA the verifier trusts, the attestation is also known
-to have existed no later than the token's \code{genTime}, independently of that clock; the
-token says nothing about the times the server wrote. Without a trusted key, a valid
-attestation shows only that the rows and the attestation belong together
+time. It does not show that the server evaluated the query correctly or that the data are true.
+If the attestation names a requester, the server also states that it authenticated that user
+for this query; the statement is only as good as the server's authentication. Without a
+trusted key, a valid attestation shows only that the rows and the attestation belong together
 (Section~\ref{sec:keys}).
+
+A compromised server can sign anything while it is compromised. With the PKCS\#11 signer,
+however, it cannot take the key away: the key stays on the token, so the attacker's access ends
+when the server is cleaned up, and an HSM can log or limit what is signed. The times inside the
+attestation come from the server's clock. With a timestamp from a TSA that the verifier trusts,
+the attestation is also known to have existed no later than the token's \code{genTime},
+independently of that clock; the token says nothing about the times the server wrote.
 
 \subsection{Reproducing an Attested Result}
 \label{sec:reproduce}
 
 An attestation names the database state it was computed from, but TDB2 keeps only the latest
-state. Running the query again later gives a result for a later version, which won't match the
-digest if the data has changed in between. Re-evaluating an attested query against its
+state. Running the query again later gives a result for a later version, which will not match the
+digest if the data have changed in between. Re-evaluating an attested query against its
 original state requires a copy of the database taken at that version, for example a backup
 whose name includes the database ID and version.
 
@@ -1507,14 +1520,15 @@ whose name includes the database ID and version.
   what. The demo requires a login for both; \code{jip:recordRequester} stops recording users.
   The demo's users and passwords are in plain text in \file{docker/shiro.ini}.
 \item Tools such as \code{tdb2.tdbloader} that write to the database from another JVM
-  without the module don't advance the version. A byte-for-byte copy of the database
+  without the module do not advance the version. A byte-for-byte copy of the database
   directory shares the original's database ID; if both copies receive writes, the pair of ID
   and version is no longer unique.
 \item Each timestamped attestation costs one outgoing HTTP request, and public TSAs limit
   request rates. The requests run one at a time in the background, so a burst of attestations
-  queues up and stays pending for longer. Real use needs an own or contracted TSA. TSA certificates
-  are not checked for revocation, and a timestamp is only as trustworthy as the TSA's key.
-\item The PKCS\#11 PIN is in the Fuseki process. The key can't be read, but whoever controls
+  queues up and stays pending for longer. Production use needs a dedicated or contracted TSA.
+  TSA certificates are not checked for revocation, and a timestamp is only as trustworthy as
+  the TSA's key.
+\item The PKCS\#11 PIN is in the Fuseki process. The key cannot be read, but whoever controls
   that process can have the token sign. SoftHSM2 stores its keys in files and only stands in
   for an HSM, and p11-kit's client/server forwarding is Linux-only.
 \item Refused attestations reach the client as HTTP 500 instead of a 4xx status.
@@ -1529,16 +1543,15 @@ whose name includes the database ID and version.
 \subsection{Future Work}
 \label{sec:future}
 
-Most of the complexity in Section~\ref{sec:recovery} exists because a component can't join
+Most of the complexity in Section~\ref{sec:recovery} exists because a component cannot join
 TDB2 before journal recovery when the database is built from a Fuseki configuration file. A
 hook in DBOE for registering components before recovery would remove the need for the custom
 assembler and for the pre-open journal scan, and a persistent \code{dataVersion} in TDB2 itself
 would remove the component entirely.
 
 Other extensions follow from the limitations above: packaging attestations as Verifiable
-Credentials in JSON-LD so that existing verifiers accept them, access
-control and rate limits for attestation, and HTTP status codes in the 4xx range for refused
-attestations. Results larger than the cap would need an encoding that can be hashed while
+Credentials in JSON-LD so that existing verifiers accept them, access control and rate limits
+for attestation, and HTTP status codes in the 4xx range for refused attestations. Results larger than the cap would need an encoding that can be hashed while
 streaming, for example a hash tree over chunks of rows, instead of holding all solutions in
 memory. Timestamps could be batched, with one token over a hash tree of many attestations, to
 reduce the number of TSA requests, and revocation data for TSA certificates could be collected
@@ -1558,12 +1571,13 @@ that writes its own REDO record makes the version persistent and atomic with the
 as the dataset is declared as \code{jip:VersionedDatasetTDB2} so that the version can be
 recovered before TDB2 opens the database. A \code{SERVICE} with a reserved IRI can attest the
 solutions of any pattern: the solutions are encoded as RDF, canonicalized with RDFC-1.0,
-hashed, and recorded in a PROV-O attestation signed with \code{ecdsa-rdfc-2019} by a key that
-stays on a PKCS\#11 token in a separate process, or with \code{eddsa-rdfc-2022} and a local key. The
-attestation can be checked offline, the cryptography matches the W3C test vectors, and
-10,000 solutions take about a second to digest. An optional RFC~3161 timestamp over the
-signature adds evidence of when an attestation existed that doesn't depend on the server, and
-because it is fetched in the background, it doesn't slow down the query.
+hashed, and recorded in a PROV-O attestation that also names the authenticated user and is
+signed with \code{ecdsa-rdfc-2019} by a key that stays on a PKCS\#11 token in a separate
+process, or with \code{eddsa-rdfc-2022} and a local key. The attestation can be checked
+offline, the cryptography agrees with the W3C test vectors, and 10,000 solutions take less
+than 0.4~s to digest. An optional RFC~3161 timestamp over the signature adds evidence of when an
+attestation existed that does not depend on the server, and because the timestamp is fetched in
+the background, it does not slow down the query.
 
 % ====================================================================================
 % Keep floats from drifting into the appendices or the bibliography.
@@ -1574,15 +1588,16 @@ because it is fetched in the background, it doesn't slow down the query.
 \section{Reproducing the Results}
 \label{app:reproduce}
 
-The repository at \url{https://github.com/larsw/jip} contains everything needed to repeat
-the measurements in this report. The
-commands below assume Docker with Compose v2, \code{curl}, and \code{jq} for the demo, and
-Maven with Java 21 or later for the local build.
+The repository at \url{https://github.com/larsw/jip} contains everything needed to repeat the
+measurements in this report. The commands below assume Docker with Compose v2, \code{curl}, and
+\code{jq} for the demo, and Maven with Java 21 or later for the local build. The demo logs in as
+the demo users of \file{docker/shiro.ini}; \code{JIP\_PORT} selects another host port if 3030 is
+taken.
 
 \needspace{7\baselineskip}
 \begin{lstlisting}[language=bash, caption={Commands to build, test, and run the demo.}, label={lst:reproduce}]
 docker compose up -d --build    # build the module, run the tests on Java 21, start Fuseki
-scripts/demo.sh --reset         # end-to-end demo; --reset deletes the demo volume
+scripts/demo.sh --reset         # end-to-end demo; --reset deletes the demo volumes
 mvn test                        # the 166 tests (PKCS#11 tests need SoftHSM2)
 scripts/build-whitepaper.sh     # this report
 \end{lstlisting}
@@ -1596,17 +1611,17 @@ Table~\ref{tab:vocab} lists the terms of the \code{jip:} namespace. The file
 domains, and ranges, and places the attestation classes under PROV-O:
 \code{jip:QueryExecution} is a subclass of \code{prov:Activity}, and the other three
 attestation classes are subclasses of \code{prov:Entity}; \code{jip:RFC3161Timestamp} is
-not a PROV class. The two functions are typed as
-\code{sd:Function} from SPARQL 1.1 Service Description~\cite{sparqlsd}, and \code{jip:VersionedDatasetTDB2} as a
-subclass of \code{ja:RDFDataset}. The file also describes \code{jip:dataVersionComponent}, a
+not a PROV class, and \code{jip:requester} is a \code{prov:Role}. The two functions are typed
+as \code{sd:Function} from SPARQL 1.1 Service Description~\cite{sparqlsd}, and
+\code{jip:VersionedDatasetTDB2} as a subclass of \code{ja:RDFDataset}. The file also describes \code{jip:dataVersionComponent}, a
 context symbol the module uses internally. The test \code{VocabularyTest} fails if the file and
 the code disagree about which terms exist.
 
 The namespace is a slash namespace, so every term has an IRI of its own. A GitHub Actions
-workflow publishes the file with GitHub Pages: the namespace IRI \mbox{\url{https://larsw.xyz/jip/}}
-serves a page that describes all terms, and each term IRI, such as
+workflow publishes the file with GitHub Pages: the namespace IRI
+\mbox{\url{https://larsw.xyz/jip/}} serves a page that describes all terms, and each term IRI, such as
 \mbox{\url{https://larsw.xyz/jip/ResultAttestation}}, serves a page for that term. GitHub Pages
-can't negotiate content types, so these pages are HTML. Each embeds its RDF as JSON-LD and links
+cannot negotiate content types, so these pages are HTML. Each embeds its RDF as JSON-LD and links
 to Turtle, JSON-LD, and N-Triples versions of the vocabulary with \code{<link rel="alternate">}
 elements.
 
@@ -1651,15 +1666,15 @@ SPARQL text. \\
 \midrule
 \code{jip:RFC3161Timestamp} & Class of timestamps over an attestation's signature. \\
 \code{jip:timestamp} & Links an attestation to a timestamp. \\
-\code{jip:timestampToken} & The DER time-stamp token, base64-encoded. \\
+\code{jip:timestampToken} & The time-stamp token in DER encoding, as base64. \\
 \code{jip:timestampAuthority}, \code{jip:timestampTime} & Copies of the issuing TSA and its time,
 for queries. \\
 \code{jip:pendingTimestamps} & Graph in the attestation store listing pending attestations. \\
+\code{jip:timestampPendingSince} & When an attestation started waiting for its timestamp. \\
 \midrule
 \code{jip:requester} & The requester's role (a \code{prov:Role}) in the query execution. \\
 \code{jip:principal}, \code{jip:authenticationScheme} & The requester's authenticated name and how
 it was authenticated. \\
-\code{jip:timestampPendingSince} & When an attestation started waiting for its timestamp. \\
 \bottomrule
 \end{tabularx}
 \end{table}

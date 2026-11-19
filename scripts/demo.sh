@@ -105,7 +105,7 @@ if [[ -n "$RESET" ]]; then
   docker compose down -v
 fi
 
-bold "Build and start the signer (PKCS#11 token) and Fuseki 6.2.0 + module"
+bold "1. Build and start the signer (PKCS#11 token) and Fuseki 6.2.0 + module"
 docker compose --progress quiet up -d --build
 wait_ready
 curl -fsS "$BASE/\$/provenance/key" -o "$OUT/key.json"
@@ -124,7 +124,7 @@ else
   info "timestamp authorities: none (attestations are not timestamped)"
 fi
 
-bold "1. Load data (Graph Store Protocol): a committed write bumps the version"
+bold "2. Load data (Graph Store Protocol): a committed write bumps the version"
 curl -fsS -u "$AS" -D "$OUT/load.headers" -o /dev/null -H 'Content-Type: text/turtle' --data-binary @- "$BASE/ds/data?default" <<'EOF'
 PREFIX ex: <http://example.org/>
 ex:alice ex:name "Alice" ; ex:email "alice@example.org" .
@@ -134,7 +134,7 @@ EOF
 V1=$(header X-Dataset-Version "$OUT/load.headers")
 info "X-Dataset-Version: $V1   X-Dataset-Id: $(header X-Dataset-Id "$OUT/load.headers")"
 
-bold "2. Attested query"
+bold "3. Attested query"
 code=$(curl -s -o /dev/null -w '%{http_code}' --data-urlencode "query=$ATTESTED_QUERY" "$BASE/ds/sparql")
 info "without logging in: HTTP $code"
 [[ "$code" == 401 ]] || { echo "!! an anonymous query was not refused" >&2; exit 1; }
@@ -144,7 +144,7 @@ jq -r '.results.bindings[] | "   \(.name.value)\t\(.email.value // "-")\t\(.atte
 info "X-Dataset-Version: $(header X-Dataset-Version "$OUT/query.headers")"
 ATTESTATION=$(jq -r '.results.bindings[0].attestation.value' "$OUT/results.srj")
 
-bold "3. The attestation ($ATTESTATION)"
+bold "4. The attestation ($ATTESTATION)"
 if [[ -n "$TSA_URLS" ]]; then
   # Timestamps are fetched in the background; right after the query the attestation is
   # usually still waiting for its token.
@@ -160,12 +160,12 @@ fi
 fetch_attestation "$ATTESTATION" attestation.ttl
 show "$OUT/attestation.ttl"
 
-bold "4. Independent verification (separate container, nothing from the server but the files)"
+bold "5. Independent verification (separate container, nothing from the server but the files)"
 info "Checks the signature, the result digest and any RFC 3161 timestamp; the TSA certificate"
 info "is chained to the JVM trust store (--tsa-trust system, the default)."
 verify results.srj attestation.ttl
 
-bold "5. Tamper with the results: change Alice's email"
+bold "6. Tamper with the results: change Alice's email"
 jq '(.results.bindings[] | select(.name.value=="Alice") | .email.value) = "mallory@example.org"' \
    "$OUT/results.srj" > "$OUT/results-tampered.srj"
 if verify results-tampered.srj attestation.ttl; then
@@ -174,7 +174,7 @@ else
   info "-> tampering detected (exit 1), as expected"
 fi
 
-bold "6. Update as bob: version advances; a new attestation, requested by bob, points at the new state"
+bold "7. Update as bob: version advances; a new attestation, requested by bob, points at the new state"
 AS=$BOB
 V2=$(update "$PREFIXES INSERT DATA { ex:dave ex:name \"Dave\" }")
 info "update response X-Dataset-Version: $V2"
@@ -184,7 +184,7 @@ fetch_attestation "$ATTESTATION2" attestation-2.ttl
 verify results-2.srj attestation-2.ttl
 AS=$ALICE
 
-bold "7. Empty result: an attestation-only row proves absence"
+bold "8. Empty result: an attestation-only row proves absence"
 query "$PREFIXES SELECT ?p ?attestation WHERE { SERVICE <urn:x-provenance:attest> { ?p ex:name \"Mallory\" } }" \
       "$OUT/results-empty.srj" "$OUT/query-empty.headers"
 jq -c '.results.bindings' "$OUT/results-empty.srj" | sed 's/^/   /'
@@ -192,12 +192,12 @@ ATTESTATION3=$(jq -r '.results.bindings[0].attestation.value' "$OUT/results-empt
 fetch_attestation "$ATTESTATION3" attestation-empty.ttl
 verify results-empty.srj attestation-empty.ttl
 
-bold "8. Persistent vs TDB2-internal counter"
+bold "9. Persistent vs TDB2-internal counter"
 query "$PREFIXES SELECT (jip:dataVersion() AS ?persistent) (jip:tdbDataVersion() AS ?tdbInternal) {}" \
       "$OUT/versions.srj" "$OUT/versions.headers"
 jq -c '.results.bindings[0] | {persistent: .persistent.value, tdbInternal: .tdbInternal.value}' "$OUT/versions.srj" | sed 's/^/   /'
 
-bold "9. Restart the container: the persistent version survives, TDB2's internal one restarts at 0"
+bold "10. Restart the container: the persistent version survives, TDB2's internal one restarts at 0"
 docker compose restart fuseki >/dev/null
 wait_ready
 curl -fsS "$BASE/\$/provenance/version/ds" | jq -c '{version, tdbInternal}' | sed 's/^/   /'
@@ -206,7 +206,7 @@ info "after one more update: X-Dataset-Version $V3"
 curl -fsS "$BASE/\$/provenance/version/ds" | jq -c '{version, tdbInternal}' | sed 's/^/   /'
 [[ "$V3" -eq $((V2 + 1)) ]] || { echo "!! version did not continue after restart ($V2 -> $V3)" >&2; exit 1; }
 
-bold "10. Attestations are queryable (PROV-O) at /provenance"
+bold "11. Attestations are queryable (PROV-O) at /provenance"
 curl -fsS -u "$AS" -H 'Accept: application/sparql-results+json' --data-urlencode query@- "$BASE/provenance/sparql" <<'EOF' |
 PREFIX prov: <http://www.w3.org/ns/prov#>
 PREFIX jip:  <https://larsw.xyz/jip/>
@@ -224,7 +224,7 @@ EOF
   jq -r '.results.bindings[] | "   v\(.version.value)\t\(.solutions.value) solution(s)\t\(.requester.value // "anonymous")\t\(.attestation.value)\t\(.tsa.value // "no timestamp")"'
 
 if [[ -n "$TSA_URLS" ]]; then
-  bold "11. Timestamp fallback: put an unreachable TSA first in the list"
+  bold "12. Timestamp fallback: put an unreachable TSA first in the list"
   DEAD_TSA=http://127.0.0.1:9/tsr
   JIP_TSA_URLS="$DEAD_TSA $TSA_URLS" docker compose --progress quiet up -d
   wait_ready
@@ -239,7 +239,7 @@ if [[ -n "$TSA_URLS" ]]; then
 fi
 
 if [[ "$(jq -r .signer "$OUT/key.json")" == pkcs11 ]]; then
-  bold "12. Restart the signer container: Fuseki reconnects to the token on the next signature"
+  bold "13. Restart the signer container: Fuseki reconnects to the token on the next signature"
   docker compose restart signer >/dev/null 2>&1
   for _ in $(seq 1 30); do
     [[ "$(docker compose ps --format '{{.Health}}' signer)" == healthy ]] && break
