@@ -16,15 +16,15 @@ class VerifyTest {
     @TempDir
     Path tmp;
     String results;
-    String cert;
+    String attestationFile;
 
     @BeforeEach
     void files() throws IOException {
         results = Files.writeString(tmp.resolve("results.srj"), """
-                { "head": { "vars": [ "name", "cert" ] }, "results": { "bindings": [] } }
+                { "head": { "vars": [ "name", "attestation" ] }, "results": { "bindings": [] } }
                 """).toString();
-        // Parses, but holds no jip:ResultCertificate.
-        cert = Files.writeString(tmp.resolve("certificate.ttl"), "<urn:x:s> <urn:x:p> <urn:x:o> .\n").toString();
+        // Parses, but holds no jip:ResultAttestation.
+        attestationFile = Files.writeString(tmp.resolve("attestation.ttl"), "<urn:x:s> <urn:x:p> <urn:x:o> .\n").toString();
     }
 
     @Test
@@ -33,51 +33,51 @@ class VerifyTest {
     }
 
     @Test
-    void notACertificateIsInvalid() {
-        assertEquals(1, Verify.run("--results", results, "--cert", cert));
+    void notAnAttestationIsInvalid() {
+        assertEquals(1, Verify.run("--results", results, "--attestation", attestationFile));
     }
 
     @Test
     void missingOptionValueIsUsageError() {
-        assertEquals(2, Verify.run("--results", results, "--cert"));
-        assertEquals(2, Verify.run("--cert", cert, "-r"));
-        assertEquals(2, Verify.run("--results", results, "--cert", cert, "--expect-key"));
-        assertEquals(2, Verify.run("--results", "", "--cert", cert));
+        assertEquals(2, Verify.run("--results", results, "--attestation"));
+        assertEquals(2, Verify.run("--attestation", attestationFile, "-r"));
+        assertEquals(2, Verify.run("--results", results, "--attestation", attestationFile, "--expect-key"));
+        assertEquals(2, Verify.run("--results", "", "--attestation", attestationFile));
     }
 
     @Test
     void optionInPlaceOfValueIsUsageError() {
-        assertEquals(2, Verify.run("--results", "--cert", cert));
-        assertEquals(2, Verify.run("--results", results, "--cert", cert, "-k", "--help"));
+        assertEquals(2, Verify.run("--results", "--attestation", attestationFile));
+        assertEquals(2, Verify.run("--results", results, "--attestation", attestationFile, "-k", "--help"));
     }
 
     @Test
     void missingRequiredOptionIsUsageError() {
         assertEquals(2, Verify.run());
         assertEquals(2, Verify.run("--results", results));
-        assertEquals(2, Verify.run("--cert", cert));
+        assertEquals(2, Verify.run("--attestation", attestationFile));
     }
 
     @Test
     void unknownArgumentIsUsageError() {
-        assertEquals(2, Verify.run("--results", results, "--cert", cert, "--frobnicate"));
+        assertEquals(2, Verify.run("--results", results, "--attestation", attestationFile, "--frobnicate"));
     }
 
     @Test
     void badFileNameIsUsageError() {
-        assertEquals(2, Verify.run("--results", "bad\0name", "--cert", cert));
+        assertEquals(2, Verify.run("--results", "bad\0name", "--attestation", attestationFile));
     }
 
     @Test
     void timestampOptions() {
-        assertEquals(1, Verify.run("--results", results, "--cert", cert, "--tsa-trust", "none", "--require-timestamp"));
-        assertEquals(2, Verify.run("--results", results, "--cert", cert, "--tsa-trust"));
-        assertEquals(2, Verify.run("--results", results, "--cert", cert, "--tsa-trust", tmp.resolve("missing.pem").toString()));
+        assertEquals(1, Verify.run("--results", results, "--attestation", attestationFile, "--tsa-trust", "none", "--require-timestamp"));
+        assertEquals(2, Verify.run("--results", results, "--attestation", attestationFile, "--tsa-trust"));
+        assertEquals(2, Verify.run("--results", results, "--attestation", attestationFile, "--tsa-trust", tmp.resolve("missing.pem").toString()));
     }
 
     @Test
     void unreadableInputIsError() {
-        assertEquals(2, Verify.run("--results", tmp.resolve("missing.srj").toString(), "--cert", cert));
-        assertEquals(2, Verify.run("--results", results, "--cert", tmp.resolve("missing.ttl").toString()));
+        assertEquals(2, Verify.run("--results", tmp.resolve("missing.srj").toString(), "--attestation", attestationFile));
+        assertEquals(2, Verify.run("--results", results, "--attestation", tmp.resolve("missing.ttl").toString()));
     }
 }

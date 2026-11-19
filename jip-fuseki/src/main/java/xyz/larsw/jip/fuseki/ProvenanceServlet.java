@@ -26,18 +26,18 @@ import org.apache.jena.riot.RDFFormat;
 import org.apache.jena.riot.RDFLanguages;
 import org.apache.jena.sparql.core.DatasetGraph;
 import org.apache.jena.system.Txn;
-import xyz.larsw.jip.cert.CertificateBuilder;
-import xyz.larsw.jip.cert.CertificateStore;
-import xyz.larsw.jip.cert.ProvenanceKeys;
-import xyz.larsw.jip.cert.ProvenanceSigner;
-import xyz.larsw.jip.cert.TimestampAuthorities;
+import xyz.larsw.jip.attestation.AttestationBuilder;
+import xyz.larsw.jip.attestation.AttestationStore;
+import xyz.larsw.jip.attestation.ProvenanceKeys;
+import xyz.larsw.jip.attestation.ProvenanceSigner;
+import xyz.larsw.jip.attestation.TimestampAuthorities;
 import xyz.larsw.jip.version.DataVersion;
 import xyz.larsw.jip.version.DataVersionComponent;
 
 /**
  * Read-only endpoints under {@code /$/provenance/}:
  * <ul>
- * <li>{@code GET certificate/{uuid}}: a stored certificate (Turtle, JSON-LD, N-Triples, N-Quads
+ * <li>{@code GET attestation/{uuid}}: a stored attestation (Turtle, JSON-LD, N-Triples, N-Quads
  * or RDF/XML by content negotiation; {@code ?format=ttl|jsonld|nt|nq} overrides). While its RFC 3161
  * timestamp is still being fetched: {@code 202 Accepted} with {@code Retry-After} and a JSON status.</li>
  * <li>{@code GET key}: the signing key as did:key, publicKeyMultibase, JWK and PEM, with its key
@@ -57,8 +57,8 @@ public class ProvenanceServlet extends HttpServlet {
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         String path = req.getPathInfo() == null ? "" : req.getPathInfo();
         try {
-            if ( path.startsWith("/certificate/") )
-                certificate(path.substring("/certificate/".length()), req, resp);
+            if ( path.startsWith("/attestation/") )
+                attestation(path.substring("/attestation/".length()), req, resp);
             else if ( path.equals("/key") )
                 key(resp);
             else if ( path.startsWith("/version/") )
@@ -70,20 +70,20 @@ public class ProvenanceServlet extends HttpServlet {
         }
     }
 
-    private void certificate(String id, HttpServletRequest req, HttpServletResponse resp) throws IOException {
+    private void attestation(String id, HttpServletRequest req, HttpServletResponse resp) throws IOException {
         if ( id.startsWith("urn:uuid:") )
             id = id.substring("urn:uuid:".length());
         UUID uuid = UUID.fromString(id);
-        Node cert = CertificateBuilder.certificateNode(uuid);
-        CertificateStore store = CertificateStore.fromContext(ARQ.getContext());
-        Optional<Instant> pendingSince = store.pendingSince(cert);
+        Node attestationIri = AttestationBuilder.attestationNode(uuid);
+        AttestationStore store = AttestationStore.fromContext(ARQ.getContext());
+        Optional<Instant> pendingSince = store.pendingSince(attestationIri);
         if ( pendingSince.isPresent() ) {
-            timestampPending(cert, pendingSince.get(), resp);
+            timestampPending(attestationIri, pendingSince.get(), resp);
             return;
         }
-        Optional<Graph> graph = store.get(cert);
+        Optional<Graph> graph = store.get(attestationIri);
         if ( graph.isEmpty() ) {
-            resp.sendError(HttpServletResponse.SC_NOT_FOUND, "No certificate " + cert.getURI());
+            resp.sendError(HttpServletResponse.SC_NOT_FOUND, "No attestation " + attestationIri.getURI());
             return;
         }
         Lang lang = chooseLang(req);
@@ -102,18 +102,18 @@ public class ProvenanceServlet extends HttpServlet {
     }
 
     /**
-     * The certificate exists and is signed, but its RFC 3161 timestamp has not landed yet:
+     * The attestation exists and is signed, but its RFC 3161 timestamp has not landed yet:
      * {@code 202 Accepted} with {@code Retry-After} (seconds until the next attempt, at least 1).
      */
-    private static void timestampPending(Node cert, Instant since, HttpServletResponse resp) throws IOException {
+    private static void timestampPending(Node attestationIri, Instant since, HttpServletResponse resp) throws IOException {
         long retryAfter = DEFAULT_RETRY_AFTER_SECONDS;
         try {
-            Optional<Duration> next = TimestampAuthorities.fromContext(ARQ.getContext()).flatMap(t -> t.untilNextAttempt(cert));
+            Optional<Duration> next = TimestampAuthorities.fromContext(ARQ.getContext()).flatMap(t -> t.untilNextAttempt(attestationIri));
             if ( next.isPresent() )
                 retryAfter = Math.max(1, (next.get().toMillis() + 999) / 1000);
         } catch (IllegalArgumentException ignored) {}
         JsonObject obj = new JsonObject();
-        obj.put("certificate", cert.getURI());
+        obj.put("attestation", attestationIri.getURI());
         obj.put("status", "timestamp-pending");
         obj.put("pendingSince", since.toString());
         obj.put("retryAfter", retryAfter);

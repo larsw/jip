@@ -1,7 +1,7 @@
 #!/bin/sh
 # Container entrypoint.
 #   server [fuseki args...]   run Fuseki with the provenance module (default)
-#   verify [verify args...]   run the independent certificate verifier (standalone jar,
+#   verify [verify args...]   run the independent attestation verifier (standalone jar,
 #                             not on Fuseki's classpath)
 #   <anything else>           exec it
 set -eu

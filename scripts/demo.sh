@@ -6,7 +6,7 @@
 #   --reset    delete the demo's Docker volumes first (databases, the signer's token and key)
 #   --tsa      RFC 3161 timestamp authorities, in priority order (default: $TSA_DEFAULT,
 #              or $JIP_TSA_URLS if set)
-#   --no-tsa   issue certificates without timestamps
+#   --no-tsa   issue attestations without timestamps
 #
 # Needs: docker (compose v2), curl, jq. Writes files to ./demo-out.
 set -euo pipefail
@@ -56,38 +56,38 @@ update() {
   header X-Dataset-Version "$OUT/update.headers"
 }
 
-# verify <results> <certificate>  -> prints report, returns verifier exit status
+# verify <results> <attestation>  -> prints report, returns verifier exit status
 verify() {
   docker run --rm -v "$OUT:/data:ro" "$IMAGE" verify \
-    --results "/data/$1" --cert "/data/$2" --expect-key "$DID" | sed 's/^/   | /'
+    --results "/data/$1" --attestation "/data/$2" --expect-key "$DID" | sed 's/^/   | /'
   return "${PIPESTATUS[0]}"
 }
 
-# certificate <cert-iri> <file>: fetch it; while its RFC 3161 timestamp is still being fetched
+# attestation <cert-iri> <file>: fetch it; while its RFC 3161 timestamp is still being fetched
 # the server answers 202 Accepted with Retry-After, so wait and ask again.
-certificate() {
-  local url="$BASE/\$/provenance/certificate/${1#urn:uuid:}" code
+fetch_attestation() {
+  local url="$BASE/\$/provenance/attestation/${1#urn:uuid:}" code
   for _ in $(seq 1 60); do
-    code=$(curl -sS -H 'Accept: text/turtle' -D "$OUT/certificate.headers" -o "$OUT/$2" -w '%{http_code}' "$url")
+    code=$(curl -sS -H 'Accept: text/turtle' -D "$OUT/attestation.headers" -o "$OUT/$2" -w '%{http_code}' "$url")
     case "$code" in
       200) return 0 ;;
-      202) sleep "$(header Retry-After "$OUT/certificate.headers")" ;;
-      *) echo "certificate $1: HTTP $code" >&2; return 1 ;;
+      202) sleep "$(header Retry-After "$OUT/attestation.headers")" ;;
+      *) echo "attestation $1: HTTP $code" >&2; return 1 ;;
     esac
   done
-  echo "certificate $1: timestamp still pending after 60 tries" >&2; return 1
+  echo "attestation $1: timestamp still pending after 60 tries" >&2; return 1
 }
 
-# show <file>: print a certificate, eliding the long base64 timestamp token
+# show <file>: print an attestation, eliding the long base64 timestamp token
 show() {
   sed -E 's/"([A-Za-z0-9+\/=]{48})[A-Za-z0-9+\/=]{16,}"/"\1..."/' "$1" | sed 's/^/   /'
 }
 
 PREFIXES='PREFIX ex: <http://example.org/>
 PREFIX jip: <https://larsw.xyz/jip/>'
-CERTIFIED_QUERY="$PREFIXES
-SELECT ?name ?email ?cert WHERE {
-  SERVICE <urn:x-provenance:certify> {
+ATTESTED_QUERY="$PREFIXES
+SELECT ?name ?email ?attestation WHERE {
+  SERVICE <urn:x-provenance:attest> {
     SELECT ?name ?email WHERE { ?p ex:name ?name OPTIONAL { ?p ex:email ?email } } ORDER BY ?name
   }
 }"
@@ -114,7 +114,7 @@ info "persistent data version of /ds: $V0"
 if [[ -n "$TSA_URLS" ]]; then
   info "timestamp authorities (priority order): $TSA_URLS"
 else
-  info "timestamp authorities: none (certificates are not timestamped)"
+  info "timestamp authorities: none (attestations are not timestamped)"
 fi
 
 bold "1. Load data (Graph Store Protocol): a committed write bumps the version"
@@ -127,19 +127,19 @@ EOF
 V1=$(header X-Dataset-Version "$OUT/load.headers")
 info "X-Dataset-Version: $V1   X-Dataset-Id: $(header X-Dataset-Id "$OUT/load.headers")"
 
-bold "2. Certified query"
-info "SERVICE <urn:x-provenance:certify> { SELECT ... ORDER BY ?name }"
-query "$CERTIFIED_QUERY" "$OUT/results.srj" "$OUT/query.headers"
-jq -r '.results.bindings[] | "   \(.name.value)\t\(.email.value // "-")\t\(.cert.value)"' "$OUT/results.srj"
+bold "2. Attested query"
+info "SERVICE <urn:x-provenance:attest> { SELECT ... ORDER BY ?name }"
+query "$ATTESTED_QUERY" "$OUT/results.srj" "$OUT/query.headers"
+jq -r '.results.bindings[] | "   \(.name.value)\t\(.email.value // "-")\t\(.attestation.value)"' "$OUT/results.srj"
 info "X-Dataset-Version: $(header X-Dataset-Version "$OUT/query.headers")"
-CERT=$(jq -r '.results.bindings[0].cert.value' "$OUT/results.srj")
+ATTESTATION=$(jq -r '.results.bindings[0].attestation.value' "$OUT/results.srj")
 
-bold "3. The certificate ($CERT)"
+bold "3. The attestation ($ATTESTATION)"
 if [[ -n "$TSA_URLS" ]]; then
-  # Timestamps are fetched in the background; right after the query the certificate is
+  # Timestamps are fetched in the background; right after the query the attestation is
   # usually still waiting for its token.
   code=$(curl -sS -D "$OUT/pending.headers" -o "$OUT/pending.json" -w '%{http_code}' \
-              "$BASE/\$/provenance/certificate/${CERT#urn:uuid:}")
+              "$BASE/\$/provenance/attestation/${ATTESTATION#urn:uuid:}")
   if [[ "$code" == 202 ]]; then
     info "right after the query: HTTP 202, Retry-After: $(header Retry-After "$OUT/pending.headers")"
     info "$(jq -c . "$OUT/pending.json")"
@@ -147,38 +147,38 @@ if [[ -n "$TSA_URLS" ]]; then
     info "right after the query: HTTP $code (the timestamp had already landed)"
   fi
 fi
-certificate "$CERT" certificate.ttl
-show "$OUT/certificate.ttl"
+fetch_attestation "$ATTESTATION" attestation.ttl
+show "$OUT/attestation.ttl"
 
 bold "4. Independent verification (separate container, nothing from the server but the files)"
 info "Checks the signature, the result digest and any RFC 3161 timestamp; the TSA certificate"
 info "is chained to the JVM trust store (--tsa-trust system, the default)."
-verify results.srj certificate.ttl
+verify results.srj attestation.ttl
 
 bold "5. Tamper with the results: change Alice's email"
 jq '(.results.bindings[] | select(.name.value=="Alice") | .email.value) = "mallory@example.org"' \
    "$OUT/results.srj" > "$OUT/results-tampered.srj"
-if verify results-tampered.srj certificate.ttl; then
+if verify results-tampered.srj attestation.ttl; then
   echo "!! tampering was NOT detected" >&2; exit 1
 else
   info "-> tampering detected (exit 1), as expected"
 fi
 
-bold "6. Update: version advances; a new certificate points at the new state"
+bold "6. Update: version advances; a new attestation points at the new state"
 V2=$(update "$PREFIXES INSERT DATA { ex:dave ex:name \"Dave\" }")
 info "update response X-Dataset-Version: $V2"
-query "$CERTIFIED_QUERY" "$OUT/results-2.srj" "$OUT/query-2.headers"
-CERT2=$(jq -r '.results.bindings[0].cert.value' "$OUT/results-2.srj")
-certificate "$CERT2" certificate-2.ttl
-verify results-2.srj certificate-2.ttl
+query "$ATTESTED_QUERY" "$OUT/results-2.srj" "$OUT/query-2.headers"
+ATTESTATION2=$(jq -r '.results.bindings[0].attestation.value' "$OUT/results-2.srj")
+fetch_attestation "$ATTESTATION2" attestation-2.ttl
+verify results-2.srj attestation-2.ttl
 
-bold "7. Empty result: a certificate-only row proves absence"
-query "$PREFIXES SELECT ?p ?cert WHERE { SERVICE <urn:x-provenance:certify> { ?p ex:name \"Mallory\" } }" \
+bold "7. Empty result: an attestation-only row proves absence"
+query "$PREFIXES SELECT ?p ?attestation WHERE { SERVICE <urn:x-provenance:attest> { ?p ex:name \"Mallory\" } }" \
       "$OUT/results-empty.srj" "$OUT/query-empty.headers"
 jq -c '.results.bindings' "$OUT/results-empty.srj" | sed 's/^/   /'
-CERT3=$(jq -r '.results.bindings[0].cert.value' "$OUT/results-empty.srj")
-certificate "$CERT3" certificate-empty.ttl
-verify results-empty.srj certificate-empty.ttl
+ATTESTATION3=$(jq -r '.results.bindings[0].attestation.value' "$OUT/results-empty.srj")
+fetch_attestation "$ATTESTATION3" attestation-empty.ttl
+verify results-empty.srj attestation-empty.ttl
 
 bold "8. Persistent vs TDB2-internal counter"
 query "$PREFIXES SELECT (jip:dataVersion() AS ?persistent) (jip:tdbDataVersion() AS ?tdbInternal) {}" \
@@ -194,21 +194,21 @@ info "after one more update: X-Dataset-Version $V3"
 curl -fsS "$BASE/\$/provenance/version/ds" | jq -c '{version, tdbInternal}' | sed 's/^/   /'
 [[ "$V3" -eq $((V2 + 1)) ]] || { echo "!! version did not continue after restart ($V2 -> $V3)" >&2; exit 1; }
 
-bold "10. Certificates are queryable (PROV-O) at /provenance"
+bold "10. Attestations are queryable (PROV-O) at /provenance"
 curl -fsS -H 'Accept: application/sparql-results+json' --data-urlencode query@- "$BASE/provenance/sparql" <<'EOF' |
 PREFIX prov: <http://www.w3.org/ns/prov#>
 PREFIX jip:  <https://larsw.xyz/jip/>
-SELECT ?cert ?version ?solutions ?ended ?tsa WHERE {
-  GRAPH ?cert {
-    ?cert jip:certifies ?r .
+SELECT ?attestation ?version ?solutions ?ended ?tsa WHERE {
+  GRAPH ?attestation {
+    ?attestation jip:attests ?r .
     ?r prov:wasDerivedFrom ?state ; jip:solutionCount ?solutions ; prov:wasGeneratedBy ?exec .
     ?state jip:dataVersion ?version .
     ?exec prov:endedAtTime ?ended .
-    OPTIONAL { ?cert jip:timestamp/jip:timestampAuthority ?tsa }
+    OPTIONAL { ?attestation jip:timestamp/jip:timestampAuthority ?tsa }
   }
 } ORDER BY ?ended
 EOF
-  jq -r '.results.bindings[] | "   v\(.version.value)\t\(.solutions.value) solution(s)\t\(.cert.value)\t\(.tsa.value // "no timestamp")"'
+  jq -r '.results.bindings[] | "   v\(.version.value)\t\(.solutions.value) solution(s)\t\(.attestation.value)\t\(.tsa.value // "no timestamp")"'
 
 if [[ -n "$TSA_URLS" ]]; then
   bold "11. Timestamp fallback: put an unreachable TSA first in the list"
@@ -216,10 +216,10 @@ if [[ -n "$TSA_URLS" ]]; then
   JIP_TSA_URLS="$DEAD_TSA $TSA_URLS" docker compose --progress quiet up -d
   wait_ready
   info "priority list is now: $DEAD_TSA $TSA_URLS"
-  query "$CERTIFIED_QUERY" "$OUT/results-fallback.srj" "$OUT/query-fallback.headers"
-  CERT4=$(jq -r '.results.bindings[0].cert.value' "$OUT/results-fallback.srj")
-  certificate "$CERT4" certificate-fallback.ttl
-  verify results-fallback.srj certificate-fallback.ttl
+  query "$ATTESTED_QUERY" "$OUT/results-fallback.srj" "$OUT/query-fallback.headers"
+  ATTESTATION4=$(jq -r '.results.bindings[0].attestation.value' "$OUT/results-fallback.srj")
+  fetch_attestation "$ATTESTATION4" attestation-fallback.ttl
+  verify results-fallback.srj attestation-fallback.ttl
   docker compose logs --no-log-prefix fuseki 2>/dev/null | grep -E 'Timestamp authority .* failed|fallback authority' | tail -2 \
     | sed -e $'s/\x1b\\[[0-9;]*[A-Za-z]//g' -e 's/^/   log: /' || true
   info "(the next run of this script restores the normal list)"
@@ -232,10 +232,10 @@ if [[ "$(jq -r .signer "$OUT/key.json")" == pkcs11 ]]; then
     [[ "$(docker compose ps --format '{{.Health}}' signer)" == healthy ]] && break
     sleep 1
   done
-  query "$CERTIFIED_QUERY" "$OUT/results-restart.srj" "$OUT/query-restart.headers"
-  CERT5=$(jq -r '.results.bindings[0].cert.value' "$OUT/results-restart.srj")
-  certificate "$CERT5" certificate-restart.ttl
-  verify results-restart.srj certificate-restart.ttl
+  query "$ATTESTED_QUERY" "$OUT/results-restart.srj" "$OUT/query-restart.headers"
+  ATTESTATION5=$(jq -r '.results.bindings[0].attestation.value' "$OUT/results-restart.srj")
+  fetch_attestation "$ATTESTATION5" attestation-restart.ttl
+  verify results-restart.srj attestation-restart.ttl
   docker compose logs --no-log-prefix fuseki 2>/dev/null | grep -E 'reconnecting' | tail -1 \
     | sed -e $'s/\x1b\\[[0-9;]*[A-Za-z]//g' -e 's/^/   log: /' || true
 fi

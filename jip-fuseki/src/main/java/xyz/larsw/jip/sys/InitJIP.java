@@ -7,12 +7,12 @@ import org.apache.jena.sys.JenaSubsystemLifecycle;
 import xyz.larsw.jip.JIP;
 import xyz.larsw.jip.function.DataVersionFunction;
 import xyz.larsw.jip.function.TdbDataVersionFunction;
-import xyz.larsw.jip.service.CertifyServiceExecutor;
+import xyz.larsw.jip.service.AttestServiceExecutor;
 import xyz.larsw.jip.version.VersionedDatasetAssembler;
 
 /**
  * Jena subsystem initialization (via {@code META-INF/services}): registers the
- * {@code jip:VersionedDatasetTDB2} assembler, the SPARQL functions and the certify SERVICE.
+ * {@code jip:VersionedDatasetTDB2} assembler, the SPARQL functions and the attest SERVICE.
  */
 public class InitJIP implements JenaSubsystemLifecycle {
 
@@ -31,7 +31,7 @@ public class InitJIP implements JenaSubsystemLifecycle {
         FunctionRegistry.get().put(JIP.FN_DATA_VERSION, DataVersionFunction.class);
         FunctionRegistry.get().put(JIP.FN_TDB_DATA_VERSION, TdbDataVersionFunction.class);
         // Prepended to the chain: runs before the HTTP executor and its httpServiceAllowed check.
-        ServiceExecutorRegistry.get().addSingleLink(new CertifyServiceExecutor());
+        ServiceExecutorRegistry.get().addSingleLink(new AttestServiceExecutor());
     }
 
     @Override

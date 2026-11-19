@@ -19,7 +19,7 @@ import org.apache.jena.sparql.util.Symbol;
 import org.apache.jena.vocabulary.OWL;
 import org.apache.jena.vocabulary.RDF;
 import org.apache.jena.vocabulary.RDFS;
-import xyz.larsw.jip.cert.Vocab;
+import xyz.larsw.jip.attestation.Vocab;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 

@@ -11,16 +11,16 @@
 
   <name>Jena intrinsic provenance (PoC)</name>
   <description>
-    Persistent TDB2 data version counter and signed PROV-O result certificates
+    Persistent TDB2 data version counter and signed PROV-O result attestations
     (RDFC-1.0 + eddsa-rdfc-2022) for Apache Jena / Fuseki.
   </description>
 
   <modules>
-    <!-- Certificate verification: canonicalization, proofs, did:key. Needs only jena-arq. -->
+    <!-- Attestation verification: canonicalization, proofs, did:key. Needs only jena-arq. -->
     <module>jip-verifier</module>
     <!-- Command line verifier (self-contained runnable jar) -->
     <module>jip-verifier-cli</module>
-    <!-- The Fuseki/TDB2 module: data version, certify SERVICE, certificate store, signing -->
+    <!-- The Fuseki/TDB2 module: data version, attest SERVICE, attestation store, signing -->
     <module>jip-fuseki</module>
   </modules>
 

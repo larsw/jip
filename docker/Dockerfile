@@ -32,7 +32,7 @@ RUN --mount=type=cache,target=/root/.m2 mvn -B package -DskipTests=${SKIP_TESTS}
 FROM eclipse-temurin:21-jre-noble
 
 LABEL org.opencontainers.image.title="jena-intrinsic-provenance" \
-      org.opencontainers.image.description="Fuseki 6.2.0 with a persistent TDB2 data version and signed RDFC-1.0 result certificates (PoC)"
+      org.opencontainers.image.description="Fuseki 6.2.0 with a persistent TDB2 data version and signed RDFC-1.0 result attestations (PoC)"
 
 # Fuseki server jar from Maven Central, pinned by SHA-256 (Central only publishes SHA-1/MD5).
 ADD --checksum=sha256:2c92c598e65ab69d99820052e05f4277ed1d77980a8845f87545ad35b71a76ee \

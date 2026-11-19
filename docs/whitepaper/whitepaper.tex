@@ -46,7 +46,7 @@
   colorlinks=true, linkcolor=accent, citecolor=accent, urlcolor=accent,
   pdftitle={Intrinsic Provenance for Apache Jena},
   pdfauthor={Lars Wilhelmsen <lars@sral.org>},
-  pdfsubject={A persistent data version for TDB2 and signed certificates for SPARQL results},
+  pdfsubject={A persistent data version for TDB2 and signed attestations for SPARQL results},
   pdfkeywords={Apache Jena, TDB2, Fuseki, SPARQL, provenance, PROV-O, RDFC-1.0, Data Integrity, ecdsa-rdfc-2019, PKCS\#11, RFC 3161},
 }
 \urlstyle{same}
@@ -111,7 +111,7 @@
 
 % ---------------------------------------------------------------- Title
 \title{\sffamily\bfseries\color{accent}Intrinsic Provenance for Apache Jena\\[0.4em]
-  \Large\mdseries\color{black}A Persistent Data Version for TDB2 and\\Signed Certificates for SPARQL Results}
+  \Large\mdseries\color{black}A Persistent Data Version for TDB2 and\\Signed Attestations for SPARQL Results}
 \author{\large Lars Wilhelmsen\\[0.2em]\normalsize\href{mailto:lars@sral.org}{\texttt{lars@sral.org}}}
 \date{\normalsize Proof-of-concept report, jena-intrinsic-provenance 0.13.0\\[0.2em]November 2026}
 
@@ -129,15 +129,15 @@ proof of concept for Apache Jena and Fuseki 6.2.0 that closes both gaps. The fir
 persistent data version for TDB2: a counter that goes up by one on every committed write
 transaction and is written to TDB2's journal in the same commit as the data, so restarts,
 compaction, and crashes leave it consistent with the data. The second part is a SPARQL
-\code{SERVICE} that certifies the solutions of the pattern inside it. Each certificate is a
+\code{SERVICE} that attests the solutions of the pattern inside it. Each attestation is a
 PROV-O graph that names the database state, records a SHA-256 digest of the solutions after
 RDF Dataset Canonicalization (RDFC-1.0), and carries a W3C Data Integrity proof. The proof is
 made with the \code{ecdsa-rdfc-2019} cryptosuite by a P-256 or P-384 key that stays on a
 PKCS\#11 token in a separate signer process; an Ed25519 key file with \code{eddsa-rdfc-2022} is
 an option. Optionally, an RFC~3161
-time-stamping authority co-signs the certificate's signature in the background, which fixes
-when the certificate existed independently of the server's clock without delaying the query. A standalone verifier checks a saved
-result against its certificate without contacting the server. The implementation passes all 65
+time-stamping authority co-signs the attestation's signature in the background, which fixes
+when the attestation existed independently of the server's clock without delaying the query. A standalone verifier checks a saved
+result against its attestation without contacting the server. The implementation passes all 65
 tests of the W3C RDFC-1.0 test suite, matches the \code{eddsa-rdfc-2022} and
 \code{ecdsa-rdfc-2019} test vectors, and digests 10,000 solutions, the default maximum, in about one second.
 \end{abstract}
@@ -162,7 +162,7 @@ questions:
 \item Can TDB2, Jena's transactional storage engine, expose a unique, monotonically increasing
   value that changes on every write transaction?
 \item Can a query that refers to a specially named \code{SERVICE} receive a provenance
-  certificate, based on PROV-O~\cite{provo}, that binds its result with RDF Dataset
+  attestation, based on PROV-O~\cite{provo}, that binds its result with RDF Dataset
   Canonicalization (RDFC-1.0)~\cite{rdfc} and is digitally signed?
 \end{enumerate}
 
@@ -171,19 +171,19 @@ zero every time the database is opened. Section~\ref{sec:version} describes a pe
 counter that TDB2 writes to its own journal in the same commit as the data, and the assembler
 that recovers it after a crash. For RQ2, Section~\ref{sec:cert} describes a \code{SERVICE}
 that evaluates the pattern inside it, encodes the solutions as RDF, canonicalizes and hashes
-them, and signs a PROV-O certificate with the W3C Data Integrity cryptosuite
+them, and signs a PROV-O attestation with the W3C Data Integrity cryptosuite
 \code{ecdsa-rdfc-2019}~\cite{vcdi,ecdsa}, using a key that is held on a PKCS\#11 token in a
 separate process. It also covers optional timestamps from an RFC~3161 time-stamping authority
 and an offline verifier.
 Section~\ref{sec:fuseki} shows how the module plugs into Fuseki without changes to Jena,
 Section~\ref{sec:eval} reports tests and measurements, and Section~\ref{sec:discussion}
-discusses what a certificate proves and what it leaves open.
+discusses what an attestation proves and what it leaves open.
 
-Figure~\ref{fig:architecture} shows the parts of the system and the path of a certified query.
-The client sends an ordinary SPARQL query to Fuseki. The certify executor evaluates the inner
-pattern in a read transaction on the versioned dataset, stores a signed certificate in a
-separate database, and returns the rows with the certificate IRI attached. The client can then
-fetch the certificate and verify the rows offline.
+Figure~\ref{fig:architecture} shows the parts of the system and the path of an attested query.
+The client sends an ordinary SPARQL query to Fuseki. The attest executor evaluates the inner
+pattern in a read transaction on the versioned dataset, stores a signed attestation in a
+separate database, and returns the rows with the attestation IRI attached. The client can then
+fetch the attestation and verify the rows offline.
 
 \begin{figure}[htb]
 \centering
@@ -200,8 +200,8 @@ fetch the certificate and verify the rows offline.
 ]
 \node[comp] (filter) {Header filter\\\texttt{X-Dataset-Version}};
 \node[comp, below=3.5mm of filter] (sparql) {SPARQL endpoints\\\texttt{/ds/sparql}, \texttt{/ds/update}};
-\node[comp, below=3.5mm of sparql] (arq) {ARQ with the\\certify \texttt{SERVICE} executor};
-\node[comp, below=3.5mm of arq] (servlet) {\texttt{/\$/provenance/*}\\certificate, key, version};
+\node[comp, below=3.5mm of sparql] (arq) {ARQ with the\\attest \texttt{SERVICE} executor};
+\node[comp, below=3.5mm of arq] (servlet) {\texttt{/\$/provenance/*}\\attestation, key, version};
 \node[draw=accent, thick, rounded corners=4pt, fit=(filter)(servlet), inner sep=3.5mm] (fuseki) {};
 \node[font=\sffamily\small\bfseries, text=accent, anchor=south] at (fuseki.north) {Fuseki 6.2.0 with the module};
 
@@ -209,12 +209,12 @@ fetch the certificate and verify the rows offline.
 \node[ext, below=16mm of client] (verify) {Verifier CLI\\(offline)};
 
 \node[store, right=27mm of sparql] (ds) {TDB2 \texttt{/ds}\\data, journal,\\version state};
-\node[store, right=27mm of servlet] (prov) {TDB2\\\texttt{/provenance}\\certificates};
+\node[store, right=27mm of servlet] (prov) {TDB2\\\texttt{/provenance}\\attestations};
 
 \draw[<->] (client.east) -- node[lbl, above=1pt] {HTTP} (fuseki.west |- client.east);
-\draw[->, dashed] (client.south) -- node[lbl, right=1pt] {saved results\\and certificate} (verify.north);
+\draw[->, dashed] (client.south) -- node[lbl, right=1pt] {saved results\\and attestation} (verify.north);
 \draw[->] (arq.east) -- node[lbl, above=2pt, sloped, pos=0.5] {rows + version} (ds.west);
-\draw[->] (arq.east) -- node[lbl, below=2pt, sloped, pos=0.5] {certificate} (prov.west);
+\draw[->] (arq.east) -- node[lbl, below=2pt, sloped, pos=0.5] {attestation} (prov.west);
 \draw[<-] (servlet.east) -- node[lbl, below=2pt] {fetch} (prov.west);
 
 \node[ext, text width=34mm, anchor=north] (tsa) at ($(fuseki.south) + (-9mm,-10mm)$) {Time-stamping authorities\\(RFC 3161, optional)};
@@ -223,10 +223,10 @@ fetch the certificate and verify the rows offline.
       inner sep=3pt, below=11mm of prov] (signer) {\textbf{Signer process}\\(own container)\\PKCS\#11 token\\with the private key};
 \draw[<->] ($(fuseki.south east) + (-5mm,0)$) |- node[lbl, pos=0.75, below=2pt] {\texttt{C\_Sign} over\\a Unix socket} (signer.west);
 \end{tikzpicture}
-\caption{Components of the proof of concept and the path of a certified query. The signing key
+\caption{Components of the proof of concept and the path of an attested query. The signing key
 stays in a separate signer process (Figure~\ref{fig:separation}); Fuseki asks it for each
 signature. If time-stamping authorities are configured, a background worker asks one of them
-to co-sign each certificate after the query has returned.}
+to co-sign each attestation after the query has returned.}
 \label{fig:architecture}
 \end{figure}
 
@@ -238,7 +238,10 @@ packages are under \code{xyz.larsw.jip}.
 \subsection{Conventions}
 
 Constant width marks code, IRIs, SPARQL, and configuration terms. Italic marks file names and
-terms at the point where they are defined. Table~\ref{tab:prefixes} lists the namespace
+terms at the point where they are defined. The signed statements the module produces are called
+\emph{result attestations}, and a query that asks for one is an \emph{attested query}. The word
+\emph{certificate} is reserved for X.509 certificates, such as the one a time-stamping
+authority signs with. Table~\ref{tab:prefixes} lists the namespace
 prefixes used in the examples.
 
 \begin{table}[ht]
@@ -373,8 +376,8 @@ charge.
 
 PROV-O~\cite{provo} is the W3C ontology for provenance. It describes \emph{entities}, such as
 a dataset or a query result; \emph{activities}, such as a query execution; and \emph{agents},
-which are responsible for activities, such as a server. The certificate in
-Section~\ref{sec:certificate} uses the relations \code{prov:wasGeneratedBy}, \code{prov:used},
+which are responsible for activities, such as a server. The attestation in
+Section~\ref{sec:attestation} uses the relations \code{prov:wasGeneratedBy}, \code{prov:used},
 \code{prov:wasDerivedFrom}, \code{prov:wasAssociatedWith}, and \code{prov:specializationOf},
 and the activity timestamps \code{prov:startedAtTime} and \code{prov:endedAtTime}.
 
@@ -658,25 +661,25 @@ after journal recovery, which leaves window B open (R3). \\
 \end{table}
 
 % ====================================================================================
-\section{Certified Query Results}
+\section{Attested Query Results}
 \label{sec:cert}
 
-\subsection{The Certify Service}
+\subsection{The Attest Service}
 \label{sec:service}
 
 SPARQL 1.1 Federated Query~\cite{sparqlfed} provides the syntax:
 \code{SERVICE <\repl{iri}> \{ \repl{pattern} \}}. ARQ, Jena's query engine, lets
 extensions handle service calls through a chain of service executors. The module's executor
-claims IRIs that start with \code{urn:x-provenance:certify} and passes all others along the
-chain. It runs before ARQ checks whether outgoing HTTP calls are allowed, so the certify IRI
+claims IRIs that start with \code{urn:x-provenance:attest} and passes all others along the
+chain. It runs before ARQ checks whether outgoing HTTP calls are allowed, so the attest IRI
 never becomes a network request. The query itself is standard SPARQL and parses with any SPARQL
 1.1 parser. Example~\ref{lst:query} shows the query the demo uses.
 
 \needspace{10\baselineskip}
-\begin{lstlisting}[language=SPARQL, caption={A certified query. Every row gets the certificate IRI in \code{?cert}.}, label={lst:query}]
+\begin{lstlisting}[language=SPARQL, caption={An attested query. Every row gets the attestation IRI in \code{?attestation}.}, label={lst:query}]
 PREFIX ex: <http://example.org/>
-SELECT ?name ?email ?cert WHERE {
-  SERVICE <urn:x-provenance:certify> {
+SELECT ?name ?email ?attestation WHERE {
+  SERVICE <urn:x-provenance:attest> {
     SELECT ?name ?email WHERE {
       ?p ex:name ?name OPTIONAL { ?p ex:email ?email }
     } ORDER BY ?name
@@ -684,11 +687,11 @@ SELECT ?name ?email ?cert WHERE {
 }
 \end{lstlisting}
 
-A certificate covers the solution sequence of the pattern inside one \code{SERVICE} call. To
-certify a whole query, put the query inside the \code{SERVICE} as a subquery, as
+An attestation covers the solution sequence of the pattern inside one \code{SERVICE} call. To
+attest a whole query, put the query inside the \code{SERVICE} as a subquery, as
 Example~\ref{lst:query} does. Whatever the outer query does afterwards, such as filtering,
-joining, or sorting again, is outside the certificate. When ARQ evaluates the \code{SERVICE}
-once per incoming row, as it does for some joins, each call gets its own certificate.
+joining, or sorting again, is outside the attestation. When ARQ evaluates the \code{SERVICE}
+once per incoming row, as it does for some joins, each call gets its own attestation.
 
 The executor evaluates the inner pattern and reads the persistent version in the same read
 transaction. That is the query's own transaction when there is one, which is always the case
@@ -697,36 +700,36 @@ uncommitted changes don't have a version yet.
 
 The executor holds all solutions in memory to hash them. The server-level setting
 \code{jip:maxSolutions} caps their number, at 10,000 by default. A larger result fails the
-query; truncating it would produce a valid certificate for a result the client didn't ask
+query; truncating it would produce a valid attestation for a result the client didn't ask
 for.
 
-The certificate IRI is bound to \code{?cert} on every row. Because the executor adds the
+The attestation IRI is bound to \code{?attestation} on every row. Because the executor adds the
 variable, \code{SELECT *} doesn't include it, and the query has to project it by name.
 Table~\ref{tab:params} lists the two parameters the service IRI accepts. They are written
-as a query string, for example \code{<urn:x-provenance:certify?var=c\&empty=none>}.
+as a query string, for example \code{<urn:x-provenance:attest?var=c\&empty=none>}.
 
 \begin{table}[ht]
 \centering
-\caption{Parameters of the certify service IRI.}
+\caption{Parameters of the attest service IRI.}
 \label{tab:params}
 \small
 \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{38mm}>{\raggedright\arraybackslash}X@{}}
 \toprule
 Parameter & Effect \\
 \midrule
-\code{var=}\textit{name} & Binds the certificate to \code{?}\textit{name} instead of
-\code{?cert}. It is an error if the inner pattern already uses that variable. \\
+\code{var=}\textit{name} & Binds the attestation to \code{?}\textit{name} instead of
+\code{?attestation}. It is an error if the inner pattern already uses that variable. \\
 \code{empty=row} (default) & An empty result produces one row that carries only the
-certificate, with \code{jip:solutionCount 0}. It certifies that the pattern had no solutions
+attestation, with \code{jip:solutionCount 0}. It attests that the pattern had no solutions
 at that version. \\
-\code{empty=none} & An empty result produces no rows and no certificate. \\
+\code{empty=none} & An empty result produces no rows and no attestation. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
 If the dataset has no persistent version, the query fails. With \code{SERVICE SILENT}, the
-incoming row passes through without a certificate instead. Fuseki reports errors raised during
-query execution as HTTP 500, and that includes refused certifications.
+incoming row passes through without an attestation instead. Fuseki reports errors raised during
+query execution as HTTP 500, and that includes refused attestations.
 
 \subsection{Encoding Solutions as RDF}
 \label{sec:encoding}
@@ -774,24 +777,24 @@ relocated package name. Each canonicalization has a time limit of 10 seconds, wh
 poison datasets. The digest is the SHA-256 hash of the canonical N-Quads, written as
 hexadecimal.
 
-The digest depends only on the certified solutions and on whether they are ordered. Two demo
+The digest depends only on the attested solutions and on whether they are ordered. Two demo
 runs on fresh databases, each with a newly generated signing key, produced the same digest
 for the same three rows: \code{feb2d70a...f06efebe}.
 
-\subsection{The Certificate}
-\label{sec:certificate}
+\subsection{The Attestation}
+\label{sec:attestation}
 
-Figure~\ref{fig:prov} shows the structure of a certificate, and
-Example~\ref{lst:certificate} shows one from the demo. The certificate \code{<C>} is a
-\code{jip:ResultCertificate}. It certifies \code{<C\#result>}, the solution sequence, which
-records the certified variables, whether the result is ordered, the number of solutions, the
+Figure~\ref{fig:prov} shows the structure of an attestation, and
+Example~\ref{lst:attestation} shows one from the demo. The attestation \code{<C>} is a
+\code{jip:ResultAttestation}. It attests \code{<C\#result>}, the solution sequence, which
+records the attested variables, whether the result is ordered, the number of solutions, the
 canonicalization and digest algorithms, and the digest. The sequence was generated by
 \code{<C\#exec>}, the query execution, which records its start and end times, the inner
 pattern as SPARQL text (\code{jip:servicePattern}), and the whole query
 (\code{jip:queryText}). The execution used, and the sequence was derived from, the dataset
 state \code{<DB\#v1>}. That state carries \code{jip:dataVersion} and specializes the
 configured dataset IRI. The server's key, as a \code{did:key}, is the software agent
-associated with the execution. If a time-stamping authority is configured, the certificate also
+associated with the execution. If a time-stamping authority is configured, the attestation also
 links to an RFC~3161 timestamp with \code{jip:timestamp} (Section~\ref{sec:timestamps}).
 
 \begin{figure}[ht]
@@ -804,7 +807,7 @@ links to an RFC~3161 timestamp with \code{jip:timestamp} (Section~\ref{sec:times
   plain/.style={rectangle, draw=black!55, dashed, fill=white, align=center, inner sep=4pt, minimum height=10mm},
   lbl/.style={font=\ttfamily\scriptsize, fill=white, inner sep=1pt},
 ]
-\node[entity]   (cert)   at (0,0)      {\texttt{<C>}\\jip:ResultCertificate};
+\node[entity]   (cert)   at (0,0)      {\texttt{<C>}\\jip:ResultAttestation};
 \node[plain]    (proof)  at (7.4,0)    {\texttt{\_:proof}\\sec:DataIntegrityProof};
 \node[entity]   (result) at (0,-2.7)   {\texttt{<C\#result>}\\jip:SolutionSequence};
 \node[activity] (exec)   at (7.4,-2.7) {\texttt{<C\#exec>}\\jip:QueryExecution};
@@ -816,7 +819,7 @@ links to an RFC~3161 timestamp with \code{jip:timestamp} (Section~\ref{sec:times
 \draw[->] (cert) -- node[lbl, above=1pt] {sec:proof} (proof);
 \draw[->] (cert) |- node[lbl, above=1pt, pos=0.75] {jip:timestamp} (stamp);
 \draw[->, dashed] (stamp) -- node[lbl, right=1pt] {covers proofValue} (proof);
-\draw[->] (cert) -- node[lbl, right=1pt] {jip:certifies} (result);
+\draw[->] (cert) -- node[lbl, right=1pt] {jip:attests} (result);
 \draw[->] (result) -- node[lbl, above=1pt] {prov:wasGeneratedBy} (exec);
 \draw[->] (exec) -- node[lbl, right=1pt] {prov:wasAssociatedWith} (agent);
 \draw[->] (result) -- node[lbl, left=1pt] {prov:wasDerivedFrom} (state);
@@ -824,7 +827,7 @@ links to an RFC~3161 timestamp with \code{jip:timestamp} (Section~\ref{sec:times
 \draw[->] (state) -- node[lbl, right=1pt] {prov:specializationOf} (dset);
 \draw[->, dashed] (proof.east) -- ++(2.2,0) |- node[lbl, sloped, above=1pt, pos=0.25] {sec:verificationMethod} (agent.east);
 \end{tikzpicture}
-\caption{Structure of a certificate, drawn with the PROV conventions: entities as ellipses,
+\caption{Structure of an attestation, drawn with the PROV conventions: entities as ellipses,
 activities as rectangles, agents as pentagons. The dashed proof and timestamp nodes are not
 part of PROV. The proof's verification method is the key in the agent's \code{did:key}; the
 optional timestamp covers the proof's signature value.}
@@ -832,14 +835,14 @@ optional timestamp covers the proof's signature value.}
 \end{figure}
 
 \needspace{10\baselineskip}
-\begin{lstlisting}[language=Turtle, caption={A certificate from the demo, with prefixes added and long literals shortened.}, label={lst:certificate}]
+\begin{lstlisting}[language=Turtle, caption={An attestation from the demo, with prefixes added and long literals shortened.}, label={lst:attestation}]
 PREFIX c:   <urn:uuid:308afd1b-62ed-4377-98ee-8cb9335561cf#>
 PREFIX db:  <urn:uuid:5f795155-cd0e-4a1a-ab18-45054b899feb#>
 PREFIX key: <did:key:zDnaexiU9JaqEPUYG1ipD22upCZMAQAhXRtQrBsdGRAUue8Eq#>
 
 <urn:uuid:308afd1b-62ed-4377-98ee-8cb9335561cf>
-    a jip:ResultCertificate, prov:Entity ;
-    jip:certifies c:result ;
+    a jip:ResultAttestation, prov:Entity ;
+    jip:attests c:result ;
     sec:proof [
         a sec:DataIntegrityProof ;
         sec:cryptosuite "ecdsa-rdfc-2019"^^sec:cryptosuiteString ;
@@ -880,7 +883,7 @@ db:v1 a jip:DatasetState, prov:Entity ;
     rdfs:label "jena-intrinsic-provenance 0.12.0 on Apache Jena 6.2.0" .
 \end{lstlisting}
 
-The certificate holds the digest of the rows and never the rows themselves, so its size
+The attestation holds the digest of the rows and never the rows themselves, so its size
 doesn't grow with the result. It does contain the query text, which has privacy implications
 (Section~\ref{sec:risks}).
 
@@ -888,8 +891,8 @@ doesn't grow with the result. It does contain the query text, which has privacy 
 \label{sec:signing}
 
 The signature follows \code{ecdsa-rdfc-2019} for P-256 and P-384 keys and
-\code{eddsa-rdfc-2022} for Ed25519 keys, and is applied to the certificate graph directly.
-Let $D$ be the certificate graph without the proof, and $P$ the proof options: the type of the
+\code{eddsa-rdfc-2022} for Ed25519 keys, and is applied to the attestation graph directly.
+Let $D$ be the attestation graph without the proof, and $P$ the proof options: the type of the
 proof node, the cryptosuite, the creation time in whole seconds, the verification method, and
 the proof purpose. With $\mathrm{C}$ for RDFC-1.0 canonicalization and $\Vert$ for
 concatenation, the signer computes
@@ -907,25 +910,25 @@ an ECDSA signature can't pass as \code{eddsa-rdfc-2022} or the other way round.
 
 In the JSON-LD form used by Verifiable Credentials, the proof sits in a separate named graph,
 because the security context declares \code{sec:proof} with an \code{@graph} container. Here
-the proof triples sit in the certificate graph, and the verifier separates them by structure.
+the proof triples sit in the attestation graph, and the verifier separates them by structure.
 The hash and signature computation is the cryptosuite's, unchanged: the proof options
 canonicalize to the bytes in the specifications' test vectors, and the module reproduces or
 verifies the vectors' proof values (Section~\ref{sec:conformance}). Off-the-shelf Verifiable Credential
-verifiers still won't accept a certificate as it is, because they expect a credential document
+verifiers still won't accept an attestation as it is, because they expect a credential document
 in JSON-LD.
 
 \subsection{Timestamps}
 \label{sec:timestamps}
 
-The times in a certificate come from the server's clock: \code{prov:startedAtTime},
+The times in an attestation come from the server's clock: \code{prov:startedAtTime},
 \code{prov:endedAtTime}, and the proof's \code{dcterms:created}. They are only as trustworthy
 as the server. Optionally, a time-stamping authority (Section~\ref{sec:tsp}) co-signs each
-certificate. The message imprint is
+attestation. The message imprint is
 \[
   \mathit{imprint} = \mathrm{SHA\text{-}256}(\mathrm{Sign}_{\mathit{sk}}(h)),
 \]
 the hash of the raw signature decoded from \code{sec:proofValue}. The signature covers the
-whole certificate, so the token does too, and the Data Integrity proof itself is unchanged.
+whole attestation, so the token does too, and the Data Integrity proof itself is unchanged.
 The request carries a random 64-bit nonce and asks for the TSA's certificate, so the token can
 be checked offline. The executor accepts a reply only if it grants a token for the same
 imprint and nonce and the token's signature verifies.
@@ -939,58 +942,58 @@ _:t a jip:RFC3161Timestamp ;
     jip:timestampTime "2026-11-19T15:12:19Z"^^xsd:dateTime .
 \end{lstlisting}
 Only the token is evidence. The authority and the time are copies for queries over the
-certificate store; the verifier reports what the token says. The timestamp triples are not part
+attestation store; the verifier reports what the token says. The timestamp triples are not part
 of the signed document $D$: a verifier removes the \code{jip:timestamp} links and the triples
 of the timestamp nodes before it checks the proof. Removing them can't hide a change, because
 removing any signed triple makes the proof fail.
 
 The setting \code{jip:timestampAuthorities} lists TSA URLs in priority order. For each
-certificate they are asked one at a time, each with its own timeout
+attestation they are asked one at a time, each with its own timeout
 (\code{jip:timestampTimeout}, 5 seconds by default), and the first valid token is used. A TSA
 that fails is moved to the end of the list for 60 seconds, so one that is down costs one
-timeout a minute rather than one per certificate; it is still tried if all others fail.
+timeout a minute rather than one per attestation; it is still tried if all others fail.
 
 A TSA request is a network round trip to a third party, typically a few hundred milliseconds,
 and several timeouts if TSAs are down. By default (\code{jip:timestampMode async}) the query
-doesn't wait for it. The executor stores the signed certificate and, in the same write
+doesn't wait for it. The executor stores the signed attestation and, in the same write
 transaction, records it as pending with a triple
 \code{<C> jip:timestampPendingSince "..."} in the store's graph
 \code{jip:pendingTimestamps}. The query returns at once. A background thread fetches the token,
-then adds the timestamp triples to the certificate graph and removes the pending triple in one
-transaction, and only if the certificate is still pending, so a certificate can't receive two
+then adds the timestamp triples to the attestation graph and removes the pending triple in one
+transaction, and only if the attestation is still pending, so an attestation can't receive two
 tokens. If no TSA answers, it tries again after 5, 15, and 30 seconds, 1, 2, and 5 minutes, and
 then every 10 minutes. One thread per configuration fetches the tokens one after another,
 because public TSAs limit request rates. Because the pending state is in the store, a restart
-loses nothing: when Fuseki has started, the module queues the pending certificates again.
+loses nothing: when Fuseki has started, the module queues the pending attestations again.
 
-While a certificate is pending, its endpoint answers \code{202 Accepted} instead of the
-certificate, with \code{Retry-After} set to the seconds until the next attempt and a short JSON
-status (Example~\ref{lst:pending}). A client fetches the certificate again after that time and
+While an attestation is pending, its endpoint answers \code{202 Accepted} instead of the
+attestation, with \code{Retry-After} set to the seconds until the next attempt and a short JSON
+status (Example~\ref{lst:pending}). A client fetches the attestation again after that time and
 gets it with its timestamp. The status 202 fits better than 503: the server is healthy and
-the certificate exists, its processing just isn't finished.
+the attestation exists, its processing just isn't finished.
 
 \needspace{6\baselineskip}
-\begin{lstlisting}[basicstyle=\ttfamily\footnotesize, caption={The certificate endpoint right after the certified query of the demo.}, label={lst:pending}]
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize, caption={The attestation endpoint right after the attested query of the demo.}, label={lst:pending}]
 HTTP/1.1 202 Accepted
 Retry-After: 1
 Content-Type: application/json
 
-{"certificate":"urn:uuid:308afd1b-62ed-4377-98ee-8cb9335561cf","status":"timestamp-pending",
+{"attestation":"urn:uuid:308afd1b-62ed-4377-98ee-8cb9335561cf","status":"timestamp-pending",
  "pendingSince":"2026-11-19T15:12:19.657253589Z","retryAfter":1}
 \end{lstlisting}
 
 The policy (\code{jip:timestampPolicy}) decides what happens when no TSA answers. With
 \code{optional}, the default, retries stop after \code{jip:timestampMaxWait} (10 minutes by
-default) and the certificate is released without a timestamp. With \code{required}, the
-certificate stays pending and the retries continue, so the endpoint keeps answering 202 until a
+default) and the attestation is released without a timestamp. With \code{required}, the
+attestation stays pending and the retries continue, so the endpoint keeps answering 202 until a
 TSA answers. The mode \code{sync} keeps the earlier behavior: the query waits for the token;
-without one, \code{optional} issues the certificate as it is and \code{required} fails the
-certification. Environment variables (\code{PROVENANCE\_TSA\_URLS}, \code{\_MODE},
+without one, \code{optional} issues the attestation as it is and \code{required} fails the
+attestation. Environment variables (\code{PROVENANCE\_TSA\_URLS}, \code{\_MODE},
 \code{\_POLICY}, \code{\_TIMEOUT}, and \code{\_MAX\_WAIT}) override the settings. Without a TSA
-list, certificates have no timestamp and are never pending.
+list, attestations have no timestamp and are never pending.
 
-The read-only SPARQL view of the certificate store (Section~\ref{sec:store}) is a plain TDB2
-service, so it shows a pending certificate already, signed but without its timestamp; the
+The read-only SPARQL view of the attestation store (Section~\ref{sec:store}) is a plain TDB2
+service, so it shows a pending attestation already, signed but without its timestamp; the
 \code{jip:pendingTimestamps} graph tells the two apart.
 
 The protocol and CMS handling come from BouncyCastle~\cite{bouncycastle}, because the JDK has no
@@ -1008,7 +1011,7 @@ are built in.
 
 \begin{description}[style=nextline, leftmargin=1.5em, font=\normalfont\code]
 \item[pkcs11 (default)] A P-256 or P-384 key on a PKCS\#11 token, used through SunPKCS11; the
-  certificates use \code{ecdsa-rdfc-2019}. The settings name the module, the slot, the PIN
+  attestations use \code{ecdsa-rdfc-2019}. The settings name the module, the slot, the PIN
   (directly or from a file), and the key's label. With \code{PROVENANCE\_PKCS11\_GENERATE} set
   to a curve, the module creates the key pair on the token if it is missing, together with a
   self-signed certificate, because SunPKCS11 only lists private keys that have one.
@@ -1028,7 +1031,7 @@ In the Docker setup the token is in a process and a container of its own
 and has no network at all. The Fuseki container loads \code{p11-kit-client.so}, and the two
 share only the volume that holds the socket. On first start the signer initializes its token,
 and the module creates the P-256 key on it through the socket, so the key is generated inside
-the token and never exported. For each certificate, the module sends $h$ and gets back $r
+the token and never exported. For each attestation, the module sends $h$ and gets back $r
 \Vert s$. If the signer process restarts, the next signature fails, and the module reconnects
 and tries again. SunPKCS11 can't re-initialize a module it has already loaded, so the module
 loads a fresh copy of \code{p11-kit-client.so} from a new path, which the system loader treats
@@ -1047,7 +1050,7 @@ Ubuntu release.
   lbl/.style={font=\sffamily\scriptsize, fill=white, inner sep=1.2pt, align=center},
 ]
 % Fuseki container
-\node[box] (exec) {Certify \texttt{SERVICE} executor:\\certificate and hash data $h$};
+\node[box] (exec) {Attest \texttt{SERVICE} executor:\\attestation and hash data $h$};
 \node[box, below=6mm of exec] (signer) {\texttt{Pkcs11Signer}\\(provider \texttt{pkcs11})};
 \node[box, below=6mm of signer] (sun) {SunPKCS11 provider (JDK)};
 \node[box, below=6mm of sun] (client) {\texttt{p11-kit-client.so}};
@@ -1104,34 +1107,34 @@ key type, cryptosuite, and signer, as Example~\ref{lst:key} shows.
 }
 \end{lstlisting}
 
-Since a \code{did:key} contains its own public key, anyone can produce a certificate that
+Since a \code{did:key} contains its own public key, anyone can produce an attestation that
 verifies against a key they generated. A verifier must therefore compare the key with one it
 already trusts, obtained through another channel. The verifier's \code{-{}-expect-key} option
 does this comparison.
 
-\subsection{Storing Certificates}
+\subsection{Storing Attestations}
 \label{sec:store}
 
-Certificates go to a separate TDB2 database, as one named graph per certificate, named by the
-certificate IRI. Writing them into the queried dataset would increment its version, so each
-certificate would change the state it describes. The server-level setting
-\code{jip:certificateStore} gives the location. The demo configuration exposes the store
-read-only as \code{/provenance}, where the certificates can be queried as PROV-O. Each
-certificate costs one write transaction on the store. The store is accessed through a small
-interface, \code{CertificateStore}, so a file-based or remote store could replace it.
+Attestations go to a separate TDB2 database, as one named graph per attestation, named by the
+attestation IRI. Writing them into the queried dataset would increment its version, so each
+attestation would change the state it describes. The server-level setting
+\code{jip:attestationStore} gives the location. The demo configuration exposes the store
+read-only as \code{/provenance}, where the attestations can be queried as PROV-O. Each
+attestation costs one write transaction on the store. The store is accessed through a small
+interface, \code{AttestationStore}, so a file-based or remote store could replace it.
 
 \subsection{Verification}
 \label{sec:verification}
 
-The verifier needs only the saved results and the certificate. Its checks are in a library,
+The verifier needs only the saved results and the attestation. Its checks are in a library,
 \file{jip-verifier}, which depends on \code{jena-arq}, titanium-rdfc, and BouncyCastle but not
-on TDB2, Fuseki or the signing key, so other Java programs can verify certificates themselves. A command,
+on TDB2, Fuseki or the signing key, so other Java programs can verify attestations themselves. A command,
 \longcode{xyz.larsw.jip.cli.Verify}, wraps the library; it is packaged as a
 self-contained jar, and the Docker image runs it with the command \code{verify}. The
 verification works in five steps:
 
 \begin{enumerate}
-\item Check the proof against the key in the \code{did:key}, over the certificate without its
+\item Check the proof against the key in the \code{did:key}, over the attestation without its
   timestamps, with the cryptosuite that fits the key type. With \code{-{}-expect-key}, also check that the key is the expected one.
 \item Check each timestamp: the token's imprint must be the hash of the proof's signature, the
   TSA's signature must verify with the certificate in the token, and that certificate must be
@@ -1139,16 +1142,16 @@ verification works in five steps:
   \code{genTime} and without revocation checks, to trust anchors: the JVM's trust store
   (\code{-{}-tsa-trust system}, the default), the CA certificates in a PEM file, or none
   (\code{-{}-tsa-trust none}).
-\item Select the rows that carry the certificate IRI. Their number must equal the
-  certificate's \code{jip:solutionCount}. For a certificate with zero solutions, accept at most one row, and
-  only if that row binds none of the certified variables.
-\item Rebuild the \code{rs:} encoding from the certified variables, with \code{rs:index} only
-  if the certificate says the result is ordered.
-\item Canonicalize the encoding, hash it, and compare the digest with the certificate's.
+\item Select the rows that carry the attestation IRI. Their number must equal the
+  attestation's \code{jip:solutionCount}. For an attestation with zero solutions, accept at most one row, and
+  only if that row binds none of the attested variables.
+\item Rebuild the \code{rs:} encoding from the attested variables, with \code{rs:index} only
+  if the attestation says the result is ordered.
+\item Canonicalize the encoding, hash it, and compare the digest with the attestation's.
 \end{enumerate}
 
 The short options \code{-r}, \code{-c}, and \code{-k} stand for \code{-{}-results},
-\code{-{}-cert}, and \code{-{}-expect-key}. A broken timestamp makes the certificate invalid.
+\code{-{}-cert}, and \code{-{}-expect-key}. A broken timestamp makes the attestation invalid.
 An untrusted one is reported but only fails verification with \code{-{}-require-timestamp},
 which demands at least one valid timestamp that isn't untrusted. The verifier exits with
 status 0 when everything matches, 1 when something doesn't, and 2 when the input
@@ -1157,29 +1160,29 @@ results with one email address changed.
 
 \needspace{18\baselineskip}
 \begin{lstlisting}[basicstyle=\ttfamily\footnotesize, caption={Verifier output for the demo results and for a tampered copy (key IRIs shortened, TSA line wrapped).}, label={lst:verify}]
-$ verify -r results.srj -c certificate.ttl -k did:key:zDnaex...e8Eq
-Certificate     : urn:uuid:308afd1b-62ed-4377-98ee-8cb9335561cf
+$ verify -r results.srj -a attestation.ttl -k did:key:zDnaex...e8Eq
+Attestation     : urn:uuid:308afd1b-62ed-4377-98ee-8cb9335561cf
 Signed by       : did:key:zDnaex...e8Eq#zDnaex...e8Eq
 Signature       : OK
 Timestamp       : OK  2026-11-19T15:12:19Z  (trusted)
   TSA           : C=US,O=DigiCert\, Inc.,CN=DigiCert SHA256 RSA4096 Timestamp
                   Responder 2026 1  via http://timestamp.digicert.com
 Dataset state   : urn:uuid:5f795155-cd0e-4a1a-ab18-45054b899feb#v1  (version 1)
-Solutions       : 3 certified, 3 row(s) carry this certificate
+Solutions       : 3 attested, 3 row(s) carry this attestation
 Result digest   : OK
 VERIFIED
 
-$ verify -r results-tampered.srj -c certificate.ttl -k did:key:zDnaex...e8Eq
+$ verify -r results-tampered.srj -a attestation.ttl -k did:key:zDnaex...e8Eq
 ...
 Result digest   : MISMATCH
-Problem         : Result digest mismatch: certificate feb2d70a...f06efebe, rows b1c94dd9...92ecdc56
+Problem         : Result digest mismatch: attestation feb2d70a...f06efebe, rows b1c94dd9...92ecdc56
 NOT VERIFIED
 \end{lstlisting}
 
 Because the verifier rebuilds the encoding from the delivered rows, the outer query must
-return the certified variables unchanged. If the outer query renames, drops, or filters them,
-the delivered rows no longer match the certificate. For an ordered certificate, the rows must
-also arrive in the certified order.
+return the attested variables unchanged. If the outer query renames, drops, or filters them,
+the delivered rows no longer match the attestation. For an ordered attestation, the rows must
+also arrive in the attested order.
 
 % ====================================================================================
 \section{Integration with Fuseki}
@@ -1196,9 +1199,9 @@ classpath is enough to load both. Example~\ref{lst:config} shows the relevant pa
 Fuseki configuration.
 
 \needspace{14\baselineskip}
-\begin{lstlisting}[language=Turtle, caption={Fuseki configuration for the versioned dataset and the certificate store (excerpt of \textit{docker/config.ttl}).}, label={lst:config}]
+\begin{lstlisting}[language=Turtle, caption={Fuseki configuration for the versioned dataset and the attestation store (excerpt of \textit{docker/config.ttl}).}, label={lst:config}]
 [] a fuseki:Server ;
-   ja:context [ ja:cxtName "https://larsw.xyz/jip/certificateStore" ;
+   ja:context [ ja:cxtName "https://larsw.xyz/jip/attestationStore" ;
                 ja:cxtValue "/fuseki/databases/provenance" ] ;
    ja:context [ ja:cxtName "https://larsw.xyz/jip/maxSolutions" ;
                 ja:cxtValue "10000" ] .
@@ -1207,7 +1210,7 @@ Fuseki configuration.
     tdb2:location "/fuseki/databases/ds" ;
     jip:datasetIRI <https://example.org/datasets/ds> .   # optional
 
-:provDataset a tdb2:DatasetTDB2 ;              # certificate store, served read-only
+:provDataset a tdb2:DatasetTDB2 ;              # attestation store, served read-only
     tdb2:location "/fuseki/databases/provenance" .
 \end{lstlisting}
 
@@ -1232,7 +1235,7 @@ area.
 \toprule
 Endpoint & Returns \\
 \midrule
-\code{GET /\$/provenance/certificate/\{uuid\}} & The certificate as Turtle, JSON-LD, N-Triples,
+\code{GET /\$/provenance/attestation/\{uuid\}} & The attestation as Turtle, JSON-LD, N-Triples,
 N-Quads, or RDF/XML, chosen by \code{Accept} or \code{?format=}. While its timestamp is
 pending: \code{202 Accepted} with \code{Retry-After} (Example~\ref{lst:pending}). \\
 \code{GET /\$/provenance/key} & The public key (Example~\ref{lst:key}). \\
@@ -1256,7 +1259,7 @@ hash. The server runs as an unprivileged user, with one volume for \file{/fuseki
 3030. The runtime image adds \code{p11-kit-client.so} and points the PKCS\#11 signer at the
 signer's socket. A second image, the signer, holds SoftHSM2 and \code{p11-kit server}; Docker
 Compose starts it first, without network, and shares its socket volume with Fuseki. The build
-stage installs SoftHSM2 too, so the PKCS\#11 tests run against a real token. The image's entry point also runs the verifier, so a client can check certificates with
+stage installs SoftHSM2 too, so the PKCS\#11 tests run against a real token. The image's entry point also runs the verifier, so a client can check attestations with
 the same image without installing Java.
 
 % ====================================================================================
@@ -1295,16 +1298,16 @@ public keys. \\
 \code{ProvenanceKeysTest} & 7 & Choosing the signer, error messages for a missing module or key
 setting, PIN files, and the \code{did:key}, JWK, and PEM forms of P-256 and P-384 keys. \\
 \code{Pkcs11SignerTest} & 4 & On a SoftHSM2 token: P-256 and P-384 keys created on the token,
-signing, finding an existing key, a missing key, a whole certificate. \\
-\code{CertificateTimestampsTest} & 6 & Timestamps against a test TSA: the proof stays valid,
+signing, finding an existing key, a missing key, a whole attestation. \\
+\code{AttestationTimestampsTest} & 6 & Timestamps against a test TSA: the proof stays valid,
 trust anchors, a token for another signature, a corrupted token, TSA certificate validity at
 \code{genTime}, reply and request matching. \\
 \code{TimestampAuthoritiesTest} & 4 & Fallback through a refusing and an unreachable TSA,
 cooldown order, configuration parsing. \\
-\code{CertifyServiceTest} & 18 & Round trips for ordered and unordered results, tampering,
+\code{AttestServiceTest} & 18 & Round trips for ordered and unordered results, tampering,
 both empty-result modes, variable names, the cap, unversioned datasets and \code{SILENT}, the
 write-transaction refusal, versions after updates, correlated calls, timestamped
-certificates, both timestamp policies in both modes, a query that doesn't wait for a held-back
+attestations, both timestamp policies in both modes, a query that doesn't wait for a held-back
 TSA, resuming pending timestamps after a restart without a second token. \\
 \code{CanonicalizationCapacityTest} & 1 & Digest time at 10,000 solutions. \\
 \code{FusekiIntegrationTest} & 2 & End to end over HTTP with \file{docker/config.ttl}; 202
@@ -1357,29 +1360,29 @@ default TSA list: DigiCert, Sectigo, and FreeTSA.
 \code{did:key:zDnaex...e8Eq} (Example~\ref{lst:key}). \\
 2 & Load three people through the Graph Store Protocol & Response header
 \code{X-Dataset-Version: 1}. \\
-3 & Run the certified query (Example~\ref{lst:query}) & Three rows with one certificate;
+3 & Run the attested query (Example~\ref{lst:query}) & Three rows with one attestation;
 \code{X-Dataset-Version: 1}. \\
-4 & Fetch the certificate right after the query & \code{202 Accepted},
+4 & Fetch the attestation right after the query & \code{202 Accepted},
 \code{Retry-After: 1}, status \code{timestamp-pending} (Example~\ref{lst:pending}); about a
-second later 200 with the timestamped certificate. \\
+second later 200 with the timestamped attestation. \\
 5 & Verify in a separate container & \code{VERIFIED}, exit status 0; the P-256 signature
 from the token checks out. Timestamp from
 DigiCert, trusted through the JVM trust store, in the same second as the proof's creation
 time. \\
 6 & Change one email address and verify & Digest mismatch, exit status 1. \\
-7 & Insert a fourth person, query again & Update header 2; new certificate for 4 solutions
+7 & Insert a fourth person, query again & Update header 2; new attestation for 4 solutions
 at version 2, verified. \\
-8 & Certify a pattern with no match & One row with only \code{?cert}; certificate with 0
+8 & Attest a pattern with no match & One row with only \code{?attestation}; attestation with 0
 solutions, verified. \\
 9 & Compare the counters & Persistent 2, internal 2. \\
 10 & Restart the container & Persistent 2, internal 0. \\
 11 & Insert one more person & Persistent 3, internal 1. \\
-12 & Query the certificate store & Three certificates, at versions 1, 2, and 2, each
+12 & Query the attestation store & Three attestations, at versions 1, 2, and 2, each
 timestamped by DigiCert. \\
 13 & Put an unreachable TSA first in the list, query again & The server logs the failed TSA
-and falls back to DigiCert; the new certificate at version 3 verifies. \\
+and falls back to DigiCert; the new attestation at version 3 verifies. \\
 14 & Restart the signer container, query again & The first signature fails, the module
-reconnects with a fresh copy of \code{p11-kit-client.so}, and the new certificate, signed with
+reconnects with a fresh copy of \code{p11-kit-client.so}, and the new attestation, signed with
 the same key, verifies. \\
 \bottomrule
 \end{tabularx}
@@ -1388,7 +1391,7 @@ the same key, verifies. \\
 \subsection{Performance}
 \label{sec:perf}
 
-Apart from evaluating the query, the only step of certification whose cost grows with the
+Apart from evaluating the query, the only step of attestation whose cost grows with the
 number of solutions is the digest.
 The capacity test digests 10,000 solutions of two variables after a warm-up run on 100
 solutions. Table~\ref{tab:perf} shows three consecutive runs on an otherwise idle Intel Core Ultra 7
@@ -1416,33 +1419,33 @@ node and to its own binding nodes, all blank, so all 10,000 solution nodes have 
 first-degree hash and each one needs the N-degree step. In an ordered encoding, \code{rs:index}
 gives each solution node a unique first-degree hash, and that step is skipped. All three cases
 stay well below the 10-second limit, which leaves room for wider rows. Solutions are held in
-memory up to the cap, and the certificate store adds one write transaction per certificate.
+memory up to the cap, and the attestation store adds one write transaction per attestation.
 
 % ====================================================================================
 \section{Discussion}
 \label{sec:discussion}
 
-\subsection{What a Certificate Proves}
+\subsection{What an Attestation Proves}
 \label{sec:trust}
 
-A valid certificate, checked against a trusted key, shows that the holder of that key stated
+A valid attestation, checked against a trusted key, shows that the holder of that key stated
 that these rows were the solutions of this pattern against a given database state at a given
 time. It doesn't show that the server evaluated the query correctly or that the data is true.
 A compromised server can sign anything while it is compromised. With the PKCS\#11 signer it
 can't take the key away, though: the key stays on the token, so access ends when the server is
-cleaned up, and an HSM can log or limit what is signed. The times inside the certificate come from the
-server's clock. With a timestamp from a TSA the verifier trusts, the certificate is also known
+cleaned up, and an HSM can log or limit what is signed. The times inside the attestation come from the
+server's clock. With a timestamp from a TSA the verifier trusts, the attestation is also known
 to have existed no later than the token's \code{genTime}, independently of that clock; the
 token says nothing about the times the server wrote. Without a trusted key, a valid
-certificate shows only that the rows and the certificate belong together
+attestation shows only that the rows and the attestation belong together
 (Section~\ref{sec:keys}).
 
-\subsection{Reproducing a Certified Result}
+\subsection{Reproducing an Attested Result}
 \label{sec:reproduce}
 
-A certificate names the database state it was computed from, but TDB2 keeps only the latest
+An attestation names the database state it was computed from, but TDB2 keeps only the latest
 state. Running the query again later gives a result for a later version, which won't match the
-digest if the data has changed in between. Re-evaluating a certified query against its
+digest if the data has changed in between. Re-evaluating an attested query against its
 original state requires a copy of the database taken at that version, for example a backup
 whose name includes the database ID and version.
 
@@ -1450,30 +1453,30 @@ whose name includes the database ID and version.
 \label{sec:risks}
 
 \begin{itemize}
-\item Anyone who can run a query can create certificates, and each certificate is a write
-  transaction on the certificate store. That can be used to make the server do a lot of
+\item Anyone who can run a query can create attestations, and each attestation is a write
+  transaction on the attestation store. That can be used to make the server do a lot of
   writes. Authentication or rate limiting is needed before real use.
-\item The demo configuration exposes the certificate store as a public, read-only SPARQL
-  endpoint. Every certificate contains the full query text, so anyone can list the queries
-  that others certified.
+\item The demo configuration exposes the attestation store as a public, read-only SPARQL
+  endpoint. Every attestation contains the full query text, so anyone can list the queries
+  that others attested.
 \item Tools such as \code{tdb2.tdbloader} that write to the database from another JVM
   without the module don't advance the version. A byte-for-byte copy of the database
   directory shares the original's database ID; if both copies receive writes, the pair of ID
   and version is no longer unique.
-\item Each timestamped certificate costs one outgoing HTTP request, and public TSAs limit
-  request rates. The requests run one at a time in the background, so a burst of certificates
+\item Each timestamped attestation costs one outgoing HTTP request, and public TSAs limit
+  request rates. The requests run one at a time in the background, so a burst of attestations
   queues up and stays pending for longer. Real use needs an own or contracted TSA. TSA certificates
   are not checked for revocation, and a timestamp is only as trustworthy as the TSA's key.
 \item The PKCS\#11 PIN is in the Fuseki process. The key can't be read, but whoever controls
   that process can have the token sign. SoftHSM2 stores its keys in files and only stands in
   for an HSM, and p11-kit's client/server forwarding is Linux-only.
-\item Refused certifications reach the client as HTTP 500 instead of a 4xx status.
+\item Refused attestations reach the client as HTTP 500 instead of a 4xx status.
 \item In embedded use with Jena 6.2.0, queries over TDB2 have to run inside a transaction,
   because lazily evaluated patterns fail outside one. This happens without the module too,
   and Fuseki always opens a transaction.
 \item Jena's IRI checker warns about the \code{\#} in \code{did:key} verification method
-  IRIs, which DID URL syntax allows. The verifier suppresses the warning when it reads a
-  certificate.
+  IRIs, which DID URL syntax allows. The verifier suppresses the warning when it reads an
+  attestation.
 \end{itemize}
 
 \subsection{Future Work}
@@ -1485,12 +1488,12 @@ hook in DBOE for registering components before recovery would remove the need fo
 assembler and for the pre-open journal scan, and a persistent \code{dataVersion} in TDB2 itself
 would remove the component entirely.
 
-Other extensions follow from the limitations above: packaging certificates as Verifiable
+Other extensions follow from the limitations above: packaging attestations as Verifiable
 Credentials in JSON-LD so that existing verifiers accept them, access
-control and rate limits for certification, and HTTP status codes in the 4xx range for refused
-certifications. Results larger than the cap would need an encoding that can be hashed while
+control and rate limits for attestation, and HTTP status codes in the 4xx range for refused
+attestations. Results larger than the cap would need an encoding that can be hashed while
 streaming, for example a hash tree over chunks of rows, instead of holding all solutions in
-memory. Timestamps could be batched, with one token over a hash tree of many certificates, to
+memory. Timestamps could be batched, with one token over a hash tree of many attestations, to
 reduce the number of TSA requests, and revocation data for TSA certificates could be collected
 when the token is issued, so that a timestamp stays verifiable after the TSA certificate
 expires. Ed25519 keys could move to PKCS\#11 once SunPKCS11 supports EdDSA, or through Java's
@@ -1506,13 +1509,13 @@ Both research questions have a positive answer, with conditions. TDB2's internal
 \code{dataVersion} has the right increment rules but lives only in memory. A DBOE component
 that writes its own REDO record makes the version persistent and atomic with the data, as long
 as the dataset is declared as \code{jip:VersionedDatasetTDB2} so that the version can be
-recovered before TDB2 opens the database. A \code{SERVICE} with a reserved IRI can certify the
+recovered before TDB2 opens the database. A \code{SERVICE} with a reserved IRI can attest the
 solutions of any pattern: the solutions are encoded as RDF, canonicalized with RDFC-1.0,
-hashed, and recorded in a PROV-O certificate signed with \code{ecdsa-rdfc-2019} by a key that
+hashed, and recorded in a PROV-O attestation signed with \code{ecdsa-rdfc-2019} by a key that
 stays on a PKCS\#11 token in a separate process, or with \code{eddsa-rdfc-2022} and a local key. The
-certificate can be checked offline, the cryptography matches the W3C test vectors, and
+attestation can be checked offline, the cryptography matches the W3C test vectors, and
 10,000 solutions take about a second to digest. An optional RFC~3161 timestamp over the
-signature adds evidence of when a certificate existed that doesn't depend on the server, and
+signature adds evidence of when an attestation existed that doesn't depend on the server, and
 because it is fetched in the background, it doesn't slow down the query.
 
 % ====================================================================================
@@ -1543,9 +1546,9 @@ scripts/build-whitepaper.sh     # this report
 
 Table~\ref{tab:vocab} lists the terms of the \code{jip:} namespace. The file
 \file{vocab/jip.ttl} in the repository defines them in RDFS and OWL, with labels, comments,
-domains, and ranges, and places the certificate classes under PROV-O:
+domains, and ranges, and places the attestation classes under PROV-O:
 \code{jip:QueryExecution} is a subclass of \code{prov:Activity}, and the other three
-certificate classes are subclasses of \code{prov:Entity}; \code{jip:RFC3161Timestamp} is
+attestation classes are subclasses of \code{prov:Entity}; \code{jip:RFC3161Timestamp} is
 not a PROV class. The two functions are typed as
 \code{sd:Function} from SPARQL 1.1 Service Description~\cite{sparqlsd}, and \code{jip:VersionedDatasetTDB2} as a
 subclass of \code{ja:RDFDataset}. The file also describes \code{jip:dataVersionComponent}, a
@@ -1555,7 +1558,7 @@ the code disagree about which terms exist.
 The namespace is a slash namespace, so every term has an IRI of its own. A GitHub Actions
 workflow publishes the file with GitHub Pages: the namespace IRI \mbox{\url{https://larsw.xyz/jip/}}
 serves a page that describes all terms, and each term IRI, such as
-\mbox{\url{https://larsw.xyz/jip/ResultCertificate}}, serves a page for that term. GitHub Pages
+\mbox{\url{https://larsw.xyz/jip/ResultAttestation}}, serves a page for that term. GitHub Pages
 can't negotiate content types, so these pages are HTML. Each embeds its RDF as JSON-LD and links
 to Turtle, JSON-LD, and N-Triples versions of the vocabulary with \code{<link rel="alternate">}
 elements.
@@ -1573,8 +1576,8 @@ Term & Meaning \\
 version. \\
 \code{jip:datasetIRI} & Configuration: the logical dataset that each dataset state
 specializes. \\
-\code{jip:certificateStore} & Server setting: location of the certificate database. \\
-\code{jip:maxSolutions} & Server setting: largest result a certify call accepts. \\
+\code{jip:attestationStore} & Server setting: location of the attestation database. \\
+\code{jip:maxSolutions} & Server setting: largest result an attest call accepts. \\
 \code{jip:timestampAuthorities} & Server setting: TSA URLs in priority order. \\
 \code{jip:timestampPolicy} & Server setting: \code{optional} or \code{required}. \\
 \code{jip:timestampTimeout} & Server setting: time allowed per TSA, in milliseconds. \\
@@ -1583,27 +1586,27 @@ specializes. \\
 \code{jip:dataVersion()} & Function: persistent version of the current snapshot. \\
 \code{jip:tdbDataVersion()} & Function: TDB2's internal counter. \\
 \midrule
-\code{jip:ResultCertificate} & Class of certificates. \\
-\code{jip:SolutionSequence} & Class of certified solution sequences. \\
+\code{jip:ResultAttestation} & Class of attestations. \\
+\code{jip:SolutionSequence} & Class of attested solution sequences. \\
 \code{jip:QueryExecution} & Class of query executions. \\
 \code{jip:DatasetState} & Class of dataset states. \\
-\code{jip:certifies} & Links a certificate to its solution sequence. \\
-\code{jip:variable} & A certified variable name. \\
+\code{jip:attests} & Links an attestation to its solution sequence. \\
+\code{jip:variable} & An attested variable name. \\
 \code{jip:ordered} & Whether row order is part of the digest. \\
-\code{jip:solutionCount} & Number of certified solutions. \\
+\code{jip:solutionCount} & Number of attested solutions. \\
 \code{jip:canonicalization} & Canonicalization algorithm (RDFC-1.0). \\
 \code{jip:digestAlgorithm}, \code{jip:digest} & Hash function and hexadecimal digest. \\
 \code{jip:servicePattern}, \code{jip:queryText} & The inner pattern and the whole query as
 SPARQL text. \\
 \code{jip:dataVersion} & Version number of a dataset state. \\
 \midrule
-\code{jip:RFC3161Timestamp} & Class of timestamps over a certificate's signature. \\
-\code{jip:timestamp} & Links a certificate to a timestamp. \\
+\code{jip:RFC3161Timestamp} & Class of timestamps over an attestation's signature. \\
+\code{jip:timestamp} & Links an attestation to a timestamp. \\
 \code{jip:timestampToken} & The DER time-stamp token, base64-encoded. \\
 \code{jip:timestampAuthority}, \code{jip:timestampTime} & Copies of the issuing TSA and its time,
 for queries. \\
-\code{jip:pendingTimestamps} & Graph in the certificate store listing pending certificates. \\
-\code{jip:timestampPendingSince} & When a certificate started waiting for its timestamp. \\
+\code{jip:pendingTimestamps} & Graph in the attestation store listing pending attestations. \\
+\code{jip:timestampPendingSince} & When an attestation started waiting for its timestamp. \\
 \bottomrule
 \end{tabularx}
 \end{table}

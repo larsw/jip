@@ -15,7 +15,7 @@
 
   <name>Jena intrinsic provenance: verifier CLI</name>
   <description>
-    Command line verifier for jip result certificates. Packaged as a self-contained jar:
+    Command line verifier for jip result attestations. Packaged as a self-contained jar:
     java -jar jip-verify.jar --results r.srj --cert c.ttl
   </description>
 

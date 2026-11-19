@@ -1,6 +1,6 @@
 # The jip: vocabulary of jena-intrinsic-provenance.
 #
-# Terms for persistent TDB2 data versions and for signed PROV-O certificates of SPARQL
+# Terms for persistent TDB2 data versions and for signed PROV-O attestations of SPARQL
 # results. VocabularyTest checks that this file defines every jip: term the code uses,
 # and no others.
 
@@ -20,10 +20,10 @@ PREFIX tdb2:    <http://jena.apache.org/2016/tdb#>
     a owl:Ontology ;
     dcterms:title "Jena intrinsic provenance (jip) vocabulary"@en ;
     dcterms:description """Terms used by jena-intrinsic-provenance, a module for Apache Jena
-and Fuseki. It adds a persistent data version to TDB2 databases and certifies the solutions
-of a SPARQL pattern wrapped in SERVICE <urn:x-provenance:certify>. A certificate is a PROV-O
+and Fuseki. It adds a persistent data version to TDB2 databases and attests the solutions
+of a SPARQL pattern wrapped in SERVICE <urn:x-provenance:attest>. An attestation is a PROV-O
 graph that names the database state the solutions were read from, records an RDFC-1.0 based
-SHA-256 digest of the solutions, and carries a W3C Data Integrity proof (eddsa-rdfc-2022)
+SHA-256 digest of the solutions, and carries a W3C Data Integrity proof (ecdsa-rdfc-2019 or eddsa-rdfc-2022)
 from the https://w3id.org/security# vocabulary."""@en ;
     dcterms:creator "Lars Wilhelmsen" ;
     dcterms:created "2026-11-15"^^xsd:date ;
@@ -32,24 +32,26 @@ from the https://w3id.org/security# vocabulary."""@en ;
     vann:preferredNamespaceUri "https://larsw.xyz/jip/" ;
     rdfs:seeAlso <https://www.w3.org/TR/prov-o/> ,
                  <https://www.w3.org/TR/rdf-canon/> ,
+                 <https://www.w3.org/TR/vc-di-ecdsa/> ,
                  <https://www.w3.org/TR/vc-di-eddsa/> .
 
-## ---- Certificates
+## ---- Attestations
 
-jip:ResultCertificate
+jip:ResultAttestation
     a owl:Class ;
     rdfs:subClassOf prov:Entity ;
-    rdfs:label "result certificate"@en ;
+    rdfs:label "result attestation"@en ;
     rdfs:comment """A signed statement that a solution sequence was obtained from a given
 dataset state. Its IRI is urn:uuid:<uuid>, it is stored as a named graph of the same name,
-and it carries one sec:proof with the eddsa-rdfc-2022 cryptosuite."""@en ;
+and it carries one sec:proof, with the ecdsa-rdfc-2019 cryptosuite (P-256 or P-384 keys) or
+eddsa-rdfc-2022 (Ed25519 keys)."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:SolutionSequence
     a owl:Class ;
     rdfs:subClassOf prov:Entity ;
     rdfs:label "solution sequence"@en ;
-    rdfs:comment """The solutions of the pattern inside one call of the certify SERVICE. Only
+    rdfs:comment """The solutions of the pattern inside one call of the attest SERVICE. Only
 the digest of the solutions is recorded, never the solutions themselves."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
@@ -57,7 +59,7 @@ jip:QueryExecution
     a owl:Class ;
     rdfs:subClassOf prov:Activity ;
     rdfs:label "query execution"@en ;
-    rdfs:comment """The evaluation of a certified pattern. Its prov:startedAtTime and
+    rdfs:comment """The evaluation of an attested pattern. Its prov:startedAtTime and
 prov:endedAtTime come from the server clock."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
@@ -70,12 +72,12 @@ urn:uuid:<database id>#v<version>. It is a prov:specializationOf the logical dat
 (jip:datasetIRI), or of urn:uuid:<database id> if none is configured."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
-jip:certifies
+jip:attests
     a owl:ObjectProperty , owl:FunctionalProperty ;
-    rdfs:domain jip:ResultCertificate ;
+    rdfs:domain jip:ResultAttestation ;
     rdfs:range jip:SolutionSequence ;
-    rdfs:label "certifies"@en ;
-    rdfs:comment "Links a certificate to the solution sequence it certifies."@en ;
+    rdfs:label "attests"@en ;
+    rdfs:comment "Links an attestation to the solution sequence it attests."@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:variable
@@ -83,8 +85,8 @@ jip:variable
     rdfs:domain jip:SolutionSequence ;
     rdfs:range xsd:string ;
     rdfs:label "variable"@en ;
-    rdfs:comment """The name, without '?', of a certified variable. A solution sequence has one
-value per variable visible in the certified pattern, excluding the certificate variable."""@en ;
+    rdfs:comment """The name, without '?', of an attested variable. A solution sequence has one
+value per variable visible in the attested pattern, excluding the attestation variable."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:ordered
@@ -92,7 +94,7 @@ jip:ordered
     rdfs:domain jip:SolutionSequence ;
     rdfs:range xsd:boolean ;
     rdfs:label "ordered"@en ;
-    rdfs:comment """True if the certified pattern has ORDER BY (or a top-N operation) at the top.
+    rdfs:comment """True if the attested pattern has ORDER BY (or a top-N operation) at the top.
 Row order is then part of the digest; otherwise the digest doesn't depend on row order."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
@@ -101,7 +103,7 @@ jip:solutionCount
     rdfs:domain jip:SolutionSequence ;
     rdfs:range xsd:integer ;
     rdfs:label "solution count"@en ;
-    rdfs:comment "The number of certified solutions, duplicates included. 0 for an empty result."@en ;
+    rdfs:comment "The number of attested solutions, duplicates included. 0 for an empty result."@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:canonicalization
@@ -135,7 +137,7 @@ jip:servicePattern
     rdfs:domain jip:QueryExecution ;
     rdfs:range xsd:string ;
     rdfs:label "service pattern"@en ;
-    rdfs:comment "The certified pattern, the body of the certify SERVICE, as SPARQL text."@en ;
+    rdfs:comment "The attested pattern, the body of the attest SERVICE, as SPARQL text."@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:queryText
@@ -143,7 +145,7 @@ jip:queryText
     rdfs:domain jip:QueryExecution ;
     rdfs:range xsd:string ;
     rdfs:label "query text"@en ;
-    rdfs:comment "The whole query that contained the certify SERVICE, as SPARQL text, when available."@en ;
+    rdfs:comment "The whole query that contained the attest SERVICE, as SPARQL text, when available."@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:dataVersion
@@ -164,20 +166,20 @@ not a jip:VersionedDatasetTDB2."""@en ;
 jip:RFC3161Timestamp
     a owl:Class ;
     rdfs:label "RFC 3161 timestamp"@en ;
-    rdfs:comment """A time-stamp token from a time-stamping authority (TSA, RFC 3161) over a
-certificate's signature. The token's message imprint is the SHA-256 hash of the raw signature
-bytes decoded from the proof's sec:proofValue; because the signature covers the certificate,
-the token proves the certificate existed at the TSA's time. Timestamps are added after signing
+    rdfs:comment """A time-stamp token from a time-stamping authority (TSA, RFC 3161) over an
+attestation's signature. The token's message imprint is the SHA-256 hash of the raw signature
+bytes decoded from the proof's sec:proofValue; because the signature covers the attestation,
+the token proves the attestation existed at the TSA's time. Timestamps are added after signing
 and are not part of the signed document: a verifier removes the jip:timestamp links and the
 timestamp nodes' triples before checking the Data Integrity proof."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:timestamp
     a owl:ObjectProperty ;
-    rdfs:domain jip:ResultCertificate ;
+    rdfs:domain jip:ResultAttestation ;
     rdfs:range jip:RFC3161Timestamp ;
     rdfs:label "timestamp"@en ;
-    rdfs:comment "Links a certificate to an RFC 3161 timestamp over its signature."@en ;
+    rdfs:comment "Links an attestation to an RFC 3161 timestamp over its signature."@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:timestampToken
@@ -208,10 +210,10 @@ jip:timestampTime
 jip:pendingTimestamps
     a rdfs:Resource ;
     rdfs:label "pending timestamps"@en ;
-    rdfs:comment """Name of a graph in the certificate store that lists the certificates whose RFC
+    rdfs:comment """Name of a graph in the attestation store that lists the attestations whose RFC
 3161 timestamp is still being fetched (asynchronous timestamps), with
-jip:timestampPendingSince. A pending certificate is already stored and signed; the
-certificate endpoint answers 202 Accepted with Retry-After for it until the timestamp is added
+jip:timestampPendingSince. A pending attestation is already stored and signed; the
+attestation endpoint answers 202 Accepted with Retry-After for it until the timestamp is added
 or, with the optional policy, until it is released without one."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
@@ -219,7 +221,7 @@ jip:timestampPendingSince
     a owl:DatatypeProperty , owl:FunctionalProperty ;
     rdfs:range xsd:dateTime ;
     rdfs:label "timestamp pending since"@en ;
-    rdfs:comment """In the jip:pendingTimestamps graph: when a certificate was stored and started
+    rdfs:comment """In the jip:pendingTimestamps graph: when an attestation was stored and started
 waiting for its RFC 3161 timestamp. The triple is removed in the same transaction that adds the
 timestamp."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
@@ -258,11 +260,11 @@ accepted."""@en ;
 
 ## ---- Configuration (context symbols, used as ja:cxtName in a ja:context)
 
-jip:certificateStore
+jip:attestationStore
     a rdfs:Resource ;
-    rdfs:label "certificate store"@en ;
+    rdfs:label "attestation store"@en ;
     rdfs:comment """Context symbol, normally set in the Fuseki server's ja:context: the TDB2
-location where certificates are stored, one named graph per certificate. It must be a
+location where attestations are stored, one named graph per attestation. It must be a
 database other than the versioned dataset."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
@@ -270,7 +272,7 @@ jip:maxSolutions
     a rdfs:Resource ;
     rdfs:label "maximum solutions"@en ;
     rdfs:comment """Context symbol, set in the Fuseki server's ja:context: the largest number of
-solutions one call of the certify SERVICE accepts (default 10000). A larger result fails the
+solutions one call of the attest SERVICE accepts (default 10000). A larger result fails the
 query; it is never truncated."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
@@ -279,7 +281,7 @@ jip:timestampAuthorities
     rdfs:label "timestamp authorities"@en ;
     rdfs:comment """Context symbol, set in the Fuseki server's ja:context: the URLs of RFC 3161
 time-stamping authorities, in priority order, separated by whitespace or commas. When set, every
-certificate gets a timestamp from the first authority that answers; an authority that fails is
+attestation gets a timestamp from the first authority that answers; an authority that fails is
 tried last for the next 60 seconds. The environment variable PROVENANCE_TSA_URLS overrides it
 (an empty value turns timestamps off)."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
@@ -288,9 +290,9 @@ jip:timestampPolicy
     a rdfs:Resource ;
     rdfs:label "timestamp policy"@en ;
     rdfs:comment """Context symbol, set in the Fuseki server's ja:context: "optional" (default)
-issues a certificate without a timestamp when no authority answers (synchronous mode) or after
-jip:timestampMaxWait (asynchronous mode); "required" fails the certification (synchronous) or
-keeps the certificate pending and retrying (asynchronous). The environment variable
+issues an attestation without a timestamp when no authority answers (synchronous mode) or after
+jip:timestampMaxWait (asynchronous mode); "required" fails the attestation (synchronous) or
+keeps the attestation pending and retrying (asynchronous). The environment variable
 PROVENANCE_TSA_POLICY overrides it."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
@@ -306,7 +308,7 @@ jip:timestampMode
     a rdfs:Resource ;
     rdfs:label "timestamp mode"@en ;
     rdfs:comment """Context symbol, set in the Fuseki server's ja:context: "async" (default) stores
-each certificate at once and fetches its RFC 3161 timestamp in the background, so queries don't
+each attestation at once and fetches its RFC 3161 timestamp in the background, so queries don't
 wait for a TSA; "sync" fetches the timestamp before the query returns. The environment variable
 PROVENANCE_TSA_MODE overrides it."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
@@ -316,8 +318,8 @@ jip:timestampMaxWait
     rdfs:label "timestamp maximum wait"@en ;
     rdfs:comment """Context symbol, set in the Fuseki server's ja:context: with asynchronous
 timestamps and the optional policy, how long to keep retrying, in milliseconds (default
-600000), before a certificate is released without a timestamp. With the required policy the
-certificate stays pending and retries continue. The environment variable
+600000), before an attestation is released without a timestamp. With the required policy the
+attestation stays pending and retries continue. The environment variable
 PROVENANCE_TSA_MAX_WAIT overrides it."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 

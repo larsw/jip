@@ -9,11 +9,11 @@ import org.apache.jena.graph.NodeFactory;
 import org.apache.jena.sparql.core.Var;
 import org.apache.jena.sparql.engine.binding.Binding;
 import org.apache.jena.sparql.engine.binding.BindingBuilder;
-import xyz.larsw.jip.service.CertifyServiceExecutor;
+import xyz.larsw.jip.service.AttestServiceExecutor;
 import org.junit.jupiter.api.Test;
 
 /**
- * Digest time at the default solution cap ({@value CertifyServiceExecutor#DEFAULT_MAX_SOLUTIONS} rows),
+ * Digest time at the default solution cap ({@value AttestServiceExecutor#DEFAULT_MAX_SOLUTIONS} rows),
  * which must stay well inside the canonicalization time limit.
  */
 class CanonicalizationCapacityTest {
@@ -39,7 +39,7 @@ class CanonicalizationCapacityTest {
 
     @Test
     void digestAtDefaultCap() {
-        int n = CertifyServiceExecutor.DEFAULT_MAX_SOLUTIONS;
+        int n = AttestServiceExecutor.DEFAULT_MAX_SOLUTIONS;
         long unordered = time(rows(n, false), false);
         long ordered = time(rows(n, false), true);
         long dups = time(rows(n, true), false);

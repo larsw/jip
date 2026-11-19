@@ -34,10 +34,10 @@ import org.apache.jena.sparql.engine.binding.Binding;
 import org.apache.jena.sparql.exec.RowSet;
 import org.apache.jena.tdb2.sys.TDBInternal;
 import xyz.larsw.jip.JIP;
-import xyz.larsw.jip.cert.CertificateVerifier;
-import xyz.larsw.jip.cert.GatedTsa;
-import xyz.larsw.jip.cert.TimestampAuthorities;
-import xyz.larsw.jip.cert.ProvenanceKeys;
+import xyz.larsw.jip.attestation.AttestationVerifier;
+import xyz.larsw.jip.attestation.GatedTsa;
+import xyz.larsw.jip.attestation.TimestampAuthorities;
+import xyz.larsw.jip.attestation.ProvenanceKeys;
 import xyz.larsw.jip.version.DataVersion;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,10 +53,10 @@ class FusekiIntegrationTest {
     String base;
     final HttpClient http = HttpClient.newHttpClient();
 
-    static final String CERTIFIED_QUERY = """
+    static final String ATTESTED_QUERY = """
             PREFIX ex: <http://example.org/>
-            SELECT ?name ?email ?cert WHERE {
-              SERVICE <urn:x-provenance:certify> {
+            SELECT ?name ?email ?attestation WHERE {
+              SERVICE <urn:x-provenance:attest> {
                 SELECT ?name ?email WHERE { ?p ex:name ?name OPTIONAL { ?p ex:email ?email } } ORDER BY ?name
               }
             }
@@ -125,8 +125,8 @@ class FusekiIntegrationTest {
         String datasetId = put.headers().firstValue("X-Dataset-Id").orElseThrow();
         assertTrue(datasetId.startsWith("urn:uuid:"));
 
-        // Certified query.
-        HttpResponse<String> res = query(CERTIFIED_QUERY);
+        // Attested query.
+        HttpResponse<String> res = query(ATTESTED_QUERY);
         assertEquals(200, res.statusCode(), res.body());
         assertEquals(1, versionHeader(res), "read response reports its snapshot");
         assertEquals(datasetId, res.headers().firstValue("X-Dataset-Id").orElseThrow());
@@ -137,11 +137,11 @@ class FusekiIntegrationTest {
         List<Binding> bindings = new ArrayList<>();
         rows.forEachRemaining(bindings::add);
         assertEquals(2, bindings.size());
-        Node cert = bindings.get(0).get(Var.alloc("cert"));
-        String uuid = cert.getURI().substring("urn:uuid:".length());
+        Node attestationIri = bindings.get(0).get(Var.alloc("attestation"));
+        String uuid = attestationIri.getURI().substring("urn:uuid:".length());
 
-        // Fetch the certificate (Turtle) and the key; verify independently.
-        HttpResponse<String> certRes = send(HttpRequest.newBuilder(URI.create(base + "/$/provenance/certificate/" + uuid))
+        // Fetch the attestation (Turtle) and the key; verify independently.
+        HttpResponse<String> certRes = send(HttpRequest.newBuilder(URI.create(base + "/$/provenance/attestation/" + uuid))
                 .header("Accept", "text/turtle"));
         assertEquals(200, certRes.statusCode(), certRes.body());
         Graph certGraph = GraphMemFactory.createDefaultGraph();
@@ -151,23 +151,23 @@ class FusekiIntegrationTest {
         String didKey = key.get("id").getAsString().value();
         assertTrue(didKey.startsWith("did:key:z6Mk"));
 
-        CertificateVerifier.Report report = CertificateVerifier.verify(certGraph, vars, bindings, Optional.of(didKey));
+        AttestationVerifier.Report report = AttestationVerifier.verify(certGraph, vars, bindings, Optional.of(didKey));
         assertTrue(report.valid(), () -> report.problems().toString());
         assertEquals(1, report.dataVersion());
 
         // JSON-LD form is offered too.
-        HttpResponse<String> jsonld = send(HttpRequest.newBuilder(URI.create(base + "/$/provenance/certificate/" + uuid))
+        HttpResponse<String> jsonld = send(HttpRequest.newBuilder(URI.create(base + "/$/provenance/attestation/" + uuid))
                 .header("Accept", "application/ld+json"));
         assertEquals(200, jsonld.statusCode());
         assertTrue(jsonld.headers().firstValue("Content-Type").orElse("").startsWith("application/ld+json"));
 
-        // The certificate store is queryable.
+        // The attestation store is queryable.
         HttpResponse<String> provQ = send(HttpRequest.newBuilder(URI.create(base + "/provenance/sparql?query="
-                + URLEncoder.encode("ASK { GRAPH <" + cert.getURI() + "> { ?s ?p ?o } }", StandardCharsets.UTF_8)))
+                + URLEncoder.encode("ASK { GRAPH <" + attestationIri.getURI() + "> { ?s ?p ?o } }", StandardCharsets.UTF_8)))
                 .header("Accept", "application/sparql-results+json"));
         assertTrue(provQ.body().contains("true"), provQ.body());
 
-        // Update -> version 2, reported on the update response, the version endpoint and new certificates.
+        // Update -> version 2, reported on the update response, the version endpoint and new attestations.
         HttpResponse<String> upd = update("PREFIX ex: <http://example.org/> INSERT DATA { ex:carol ex:name \"Carol\" }");
         assertTrue(upd.statusCode() / 100 == 2, upd.body());
         assertEquals(2, versionHeader(upd));
@@ -180,9 +180,9 @@ class FusekiIntegrationTest {
         assertTrue(fn.body().contains("\"2\""), fn.body());
         assertEquals(2, versionHeader(fn));
 
-        // Unversioned dataset: the certify SERVICE is refused.
+        // Unversioned dataset: the attest SERVICE is refused.
         HttpResponse<String> refused = send(HttpRequest.newBuilder(URI.create(base + "/provenance/sparql?query="
-                + URLEncoder.encode("SELECT * { SERVICE <urn:x-provenance:certify> { ?s ?p ?o } }", StandardCharsets.UTF_8))));
+                + URLEncoder.encode("SELECT * { SERVICE <urn:x-provenance:attest> { ?s ?p ?o } }", StandardCharsets.UTF_8))));
         assertNotEquals(200, refused.statusCode());
         assertTrue(refused.headers().firstValue("X-Dataset-Version").isEmpty(), "no header for unversioned datasets");
     }
@@ -196,11 +196,11 @@ class FusekiIntegrationTest {
             send(HttpRequest.newBuilder(URI.create(base + "/ds/data?default"))
                     .header("Content-Type", "text/turtle")
                     .POST(HttpRequest.BodyPublishers.ofString("<http://example.org/a> <http://example.org/name> \"A\" .")));
-            HttpResponse<String> res = query(CERTIFIED_QUERY);
+            HttpResponse<String> res = query(ATTESTED_QUERY);
             assertEquals(200, res.statusCode(), "the query does not wait for the TSA");
             String uuid = JSON.parse(res.body()).get("results").getAsObject().get("bindings").getAsArray().get(0)
-                    .getAsObject().get("cert").getAsObject().get("value").getAsString().value().substring("urn:uuid:".length());
-            URI certUri = URI.create(base + "/$/provenance/certificate/" + uuid);
+                    .getAsObject().get("attestation").getAsObject().get("value").getAsString().value().substring("urn:uuid:".length());
+            URI certUri = URI.create(base + "/$/provenance/attestation/" + uuid);
 
             HttpResponse<String> pending = send(HttpRequest.newBuilder(certUri).header("Accept", "text/turtle"));
             assertEquals(202, pending.statusCode(), pending.body());
@@ -208,7 +208,7 @@ class FusekiIntegrationTest {
             assertTrue(retryAfter >= 1, "Retry-After in seconds");
             JsonObject status = JSON.parse(pending.body());
             assertEquals("timestamp-pending", status.get("status").getAsString().value());
-            assertEquals("urn:uuid:" + uuid, status.get("certificate").getAsString().value());
+            assertEquals("urn:uuid:" + uuid, status.get("attestation").getAsString().value());
 
             gated.open();
             HttpResponse<String> done = null;
@@ -219,7 +219,7 @@ class FusekiIntegrationTest {
                 Thread.sleep(100);
             }
             assertEquals(200, done.statusCode(), done.body());
-            assertTrue(done.body().contains("RFC3161Timestamp"), "the certificate now carries its timestamp");
+            assertTrue(done.body().contains("RFC3161Timestamp"), "the attestation now carries its timestamp");
         } finally {
             ARQ.getContext().remove(JIP.symTimestampAuthorities);
         }

@@ -1,8 +1,8 @@
 # Fuseki configuration for the jena-intrinsic-provenance PoC.
 #
 #   /ds          versioned TDB2 dataset (query, update, graph store)
-#   /provenance  read-only view of the certificate store
-#   /$/provenance/{certificate/<uuid>, key, version/<dataset>}  (module endpoints)
+#   /provenance  read-only view of the attestation store
+#   /$/provenance/{attestation/<uuid>, key, version/<dataset>}  (module endpoints)
 
 PREFIX :        <#>
 PREFIX fuseki:  <http://jena.apache.org/fuseki#>
@@ -12,10 +12,10 @@ PREFIX tdb2:    <http://jena.apache.org/2016/tdb#>
 PREFIX jip:     <https://larsw.xyz/jip/>
 
 [] rdf:type fuseki:Server ;
-   # Where certificates are stored (a separate, unversioned TDB2 database).
-   ja:context [ ja:cxtName "https://larsw.xyz/jip/certificateStore" ;
+   # Where attestations are stored (a separate, unversioned TDB2 database).
+   ja:context [ ja:cxtName "https://larsw.xyz/jip/attestationStore" ;
                 ja:cxtValue "/fuseki/databases/provenance" ] ;
-   # Largest solution sequence a certify SERVICE call may return.
+   # Largest solution sequence an attest SERVICE call may return.
    ja:context [ ja:cxtName "https://larsw.xyz/jip/maxSolutions" ;
                 ja:cxtValue "10000" ] .
    # RFC 3161 timestamps (off unless configured). The environment variables
@@ -41,7 +41,7 @@ PREFIX jip:     <https://larsw.xyz/jip/>
     tdb2:location "/fuseki/databases/ds" ;
     jip:datasetIRI <https://example.org/datasets/ds> .
 
-## ---- Certificate store (read-only over HTTP; written by the certify SERVICE)
+## ---- Attestation store (read-only over HTTP; written by the attest SERVICE)
 
 :provService rdf:type fuseki:Service ;
     fuseki:name "provenance" ;

@@ -4,11 +4,11 @@ import org.apache.jena.rdf.model.Property;
 import org.apache.jena.rdf.model.Resource;
 import org.apache.jena.rdf.model.ResourceFactory;
 import org.apache.jena.sparql.util.Symbol;
-import xyz.larsw.jip.cert.Vocab;
+import xyz.larsw.jip.attestation.Vocab;
 
 /**
  * Names shared across the module: the vocabulary namespace, the
- * certify SERVICE IRI, assembler terms, context symbols and function IRIs.
+ * attest SERVICE IRI, assembler terms, context symbols and function IRIs.
  * <p>
  * The namespace is defined in the verifier library as {@link Vocab#NS}; change it there to
  * rename.
@@ -19,8 +19,8 @@ public final class JIP {
     /** Namespace for the custom vocabulary. */
     public static final String NS = Vocab.NS;
 
-    /** The specially named SERVICE that certifies its inner solution sequence. */
-    public static final String SERVICE_CERTIFY = "urn:x-provenance:certify";
+    /** The specially named SERVICE that attests its inner solution sequence. */
+    public static final String SERVICE_ATTEST = "urn:x-provenance:attest";
 
     // ---- Assembler
 
@@ -33,9 +33,9 @@ public final class JIP {
 
     /** Dataset context: the attached {@code DataVersionComponent}. */
     public static final Symbol symDataVersion = Symbol.create(NS + "dataVersionComponent");
-    /** Server/dataset context: TDB2 location of the certificate store. */
-    public static final Symbol symCertificateStore = Symbol.create(NS + "certificateStore");
-    /** Server context: maximum number of solutions a certified SERVICE may return. */
+    /** Server/dataset context: TDB2 location of the attestation store. */
+    public static final Symbol symAttestationStore = Symbol.create(NS + "attestationStore");
+    /** Server context: maximum number of solutions an attested SERVICE may return. */
     public static final Symbol symMaxSolutions = Symbol.create(NS + "maxSolutions");
     /** Server context: RFC 3161 TSA URLs in priority order (whitespace or comma separated). */
     public static final Symbol symTimestampAuthorities = Symbol.create(NS + "timestampAuthorities");
@@ -48,11 +48,11 @@ public final class JIP {
     /** Server context: async + optional policy: how long to retry, in milliseconds (default 600000). */
     public static final Symbol symTimestampMaxWait = Symbol.create(NS + "timestampMaxWait");
 
-    // ---- Certificate store
+    // ---- Attestation store
 
-    /** Named graph in the certificate store listing the certificates waiting for a timestamp. */
+    /** Named graph in the attestation store listing the attestations waiting for a timestamp. */
     public static final Resource PENDING_TIMESTAMPS = resource("pendingTimestamps");
-    /** In {@link #PENDING_TIMESTAMPS}: when a certificate started waiting for its timestamp. */
+    /** In {@link #PENDING_TIMESTAMPS}: when an attestation started waiting for its timestamp. */
     public static final Property timestampPendingSince = property("timestampPendingSince");
 
     // ---- SPARQL functions

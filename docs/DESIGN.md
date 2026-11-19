@@ -4,7 +4,7 @@ Proof of concept on **Apache Jena 6.2.0 / Fuseki 6.2.0 (Java 21)** with two goal
 
 1. Expose a unique, monotonically increasing value that is bumped on every write
    transaction of a TDB2 database.
-2. Return a signed, PROV-O-based provenance certificate for the result of a query
+2. Return a signed, PROV-O-based provenance attestation for the result of a query
    pattern wrapped in a specially named `SERVICE`. The result is bound with RDF
    Dataset Canonicalization (RDFC-1.0, <https://github.com/w3c/rdf-canon>).
 
@@ -77,35 +77,35 @@ These findings come from the 6.2.0 sources:
     validator.
 - Using any of these on a dataset without the component is an error.
 
-## 3. Certificate `SERVICE`
+## 3. Attestation `SERVICE`
 
 ```sparql
-SELECT ?name ?email ?cert WHERE {
-  SERVICE <urn:x-provenance:certify> {
+SELECT ?name ?email ?attestation WHERE {
+  SERVICE <urn:x-provenance:attest> {
     SELECT ?name ?email WHERE { … } ORDER BY ?name LIMIT 10
   }
 }
 ```
 
-- **Scope.** The certificate covers the inner solution sequence. Each executor call
-  produces one certificate, so a `SERVICE` on the right-hand side of a join gives
-  one certificate per incoming row. Anything the outer query does afterwards is
-  outside the certificate.
-- **Delivery.** Every output row has the certificate IRI `<urn:uuid:C>` bound to
-  `?cert`. The variable name can be changed with `<urn:x-provenance:certify?var=x>`.
+- **Scope.** The attestation covers the inner solution sequence. Each executor call
+  produces one attestation, so a `SERVICE` on the right-hand side of a join gives
+  one attestation per incoming row. Anything the outer query does afterwards is
+  outside the attestation.
+- **Delivery.** Every output row has the attestation IRI `<urn:uuid:C>` bound to
+  `?attestation`. The variable name can be changed with `<urn:x-provenance:attest?var=x>`.
   It is an error if the inner pattern already uses that variable. The variable must
   be projected explicitly, because `SELECT *` does not include it. The signed
-  certificate is fetched from `GET /$/provenance/certificate/{uuid}` (Turtle,
+  attestation is fetched from `GET /$/provenance/attestation/{uuid}` (Turtle,
   JSON-LD, N-Triples or N-Quads).
 - **Empty results.** With `?empty=row`, the default, an empty inner result produces
-  one certificate-only row with `jip:solutionCount 0`. With `?empty=none`, an empty
-  result gives zero rows and no certificate.
+  one attestation-only row with `jip:solutionCount 0`. With `?empty=none`, an empty
+  result gives zero rows and no attestation.
 - **No counter.** If the dataset is not a `jip:VersionedDatasetTDB2`, the query fails.
 - **Memory cap.** The rows are fully held in memory for hashing. `jip:maxSolutions`
   is a server-level context setting with a default of 10,000. A result above the cap
   fails the query and is never truncated.
 - **`SERVICE SILENT`.** On error, the incoming row is returned unchanged, with no
-  certificate.
+  attestation.
 
 ### Turning the result into RDF (input to RDFC-1.0)
 
@@ -113,15 +113,15 @@ The encoding uses the W3C result-set vocabulary (`rs:`
 <http://www.w3.org/2001/sw/DataAccess/tests/result-set#>):
 
 ```
-_:R a rs:ResultSet ; rs:resultVariable "v" (each certified var) ; rs:solution _:S1, … .
+_:R a rs:ResultSet ; rs:resultVariable "v" (each attested var) ; rs:solution _:S1, … .
 _:Si rs:index i            # only when ordered (1-based)
 _:Si rs:binding _:B .  _:B rs:variable "v" ; rs:value <term> .   # bound vars only
 ```
 
 - A blank-node *value* maps to one RDF blank node per distinct label in the result,
   so co-reference between rows is kept.
-- The certified variables are the inner pattern's visible variables, minus the
-  certificate variable.
+- The attested variables are the inner pattern's visible variables, minus the
+  attestation variable.
 - **Ordered** means the inner algebra has `ORDER BY` or `TopN` at the top, below
   slice, distinct, reduced and project.
 - **Digest:** `SHA-256(RDFC-1.0 canonical N-Quads)`, as hex.
@@ -129,11 +129,11 @@ _:Si rs:binding _:B .  _:B rs:variable "v" ; rs:value <term> .   # bound vars on
 - **Canonicalization library:** `com.apicatalog:titanium-rdfc:3.0.0`, checked against
   the vendored W3C rdf-canon test suite.
 
-### Certificate (PROV-O, one named graph `<urn:uuid:C>` in the provenance store)
+### Attestation (PROV-O, one named graph `<urn:uuid:C>` in the provenance store)
 
 ```turtle
-<urn:uuid:C> a jip:ResultCertificate, prov:Entity ;
-    jip:certifies <urn:uuid:C#result> ;
+<urn:uuid:C> a jip:ResultAttestation, prov:Entity ;
+    jip:attests <urn:uuid:C#result> ;
     sec:proof _:proof .
 <urn:uuid:C#result> a prov:Entity, jip:SolutionSequence ;
     prov:wasGeneratedBy <urn:uuid:C#exec> ;
@@ -143,12 +143,12 @@ _:Si rs:binding _:B .  _:B rs:variable "v" ; rs:value <term> .   # bound vars on
     jip:digestAlgorithm "SHA-256" ; jip:digest "…hex…" .
 <urn:uuid:C#exec> a prov:Activity, jip:QueryExecution ;
     prov:used <urn:uuid:DB#vN> ;
-    prov:wasAssociatedWith <did:key:z6Mk…> ;
+    prov:wasAssociatedWith <did:key:zDn…> ;
     prov:startedAtTime … ; prov:endedAtTime … ;
     jip:servicePattern "…inner pattern as SPARQL…" ; jip:queryText "…full query…" .
 <urn:uuid:DB#vN> a prov:Entity, jip:DatasetState ;
     prov:specializationOf <datasetIRI or urn:uuid:DB> ; jip:dataVersion N .
-<did:key:z6Mk…> a prov:SoftwareAgent ; rdfs:label "…" .
+<did:key:zDn…> a prov:SoftwareAgent ; rdfs:label "…" .
 ```
 
 Only the digest of the rows is stored, never the rows themselves.
@@ -162,7 +162,7 @@ Only the digest of the rows is stored, never the rows themselves.
 - **Proof node:** `_:proof a sec:DataIntegrityProof ; sec:cryptosuite "ecdsa-rdfc-2019" ;
   sec:verificationMethod <did:key:zDn…#zDn…> ; sec:proofPurpose sec:assertionMethod ;
   dcterms:created … ; sec:proofValue "z…"`.
-- **Unsecured document:** the certificate graph without the proof triples and
+- **Unsecured document:** the attestation graph without the proof triples and
   without `<C> sec:proof _:proof`.
 - **Proof config:** the proof node triples without `sec:proofValue`.
 - **Signature:** over `H(canon(proofConfig)) ‖ H(canon(document))`: Ed25519, or ECDSA with
@@ -181,10 +181,10 @@ is out of scope" risk.
 
 - **What is timestamped.** The TSA's message imprint is `SHA-256(signature)`, where
   `signature` is the raw Ed25519 signature decoded from `sec:proofValue`. The signature covers
-  the whole certificate, so the token does too, and the Data Integrity proof is unchanged. This
-  is the construction of a CAdES signature time-stamp. It proves the certificate existed at the
+  the whole attestation, so the token does too, and the Data Integrity proof is unchanged. This
+  is the construction of a CAdES signature time-stamp. It proves the attestation existed at the
   TSA's `genTime`; it does not make the server's own `prov:*Time` values trustworthy.
-- **Where the token goes.** After signing, in the same certificate graph:
+- **Where the token goes.** After signing, in the same attestation graph:
   ```turtle
   <urn:uuid:C> jip:timestamp _:t .
   _:t a jip:RFC3161Timestamp ;
@@ -202,40 +202,40 @@ is out of scope" risk.
 - **Priority list and fallback.** `jip:timestampAuthorities` lists TSA URLs in priority order.
   They are tried one at a time, each with `jip:timestampTimeout` (default 5 s); the first valid
   token wins. A TSA that fails is moved to the end of the list for 60 s, so a TSA that is down
-  costs one timeout per minute rather than one per certificate. It is still tried if all the
+  costs one timeout per minute rather than one per attestation. It is still tried if all the
   others fail too.
-- **Asynchronous by default.** With `jip:timestampMode async` (the default) the certify
-  SERVICE stores the signed certificate and returns; the query never waits for a TSA. In the
-  same write transaction the certificate is recorded as pending, as
+- **Asynchronous by default.** With `jip:timestampMode async` (the default) the attest
+  SERVICE stores the signed attestation and returns; the query never waits for a TSA. In the
+  same write transaction the attestation is recorded as pending, as
   `<C> jip:timestampPendingSince "…"` in the store's graph `jip:pendingTimestamps`. One
   background thread per configuration (public TSAs rate-limit) fetches tokens in order. On
-  success it adds the timestamp triples to the certificate graph and removes the pending triple,
-  again in one transaction, and only if the certificate is still pending, so a certificate
+  success it adds the timestamp triples to the attestation graph and removes the pending triple,
+  again in one transaction, and only if the attestation is still pending, so an attestation
   never gets two tokens. On failure it retries after 5 s, 15 s, 30 s, 1 min, 2 min, 5 min and
-  then every 10 min. At server start (`serverAfterStarting`) the pending certificates of an
+  then every 10 min. At server start (`serverAfterStarting`) the pending attestations of an
   earlier run are queued again; if timestamps have been turned off or switched to sync, they
   are released without a timestamp.
-- **"Try later".** `GET /$/provenance/certificate/{uuid}` answers a pending certificate with
+- **"Try later".** `GET /$/provenance/attestation/{uuid}` answers a pending attestation with
   `202 Accepted`, `Retry-After` (whole seconds until the next attempt, at least 1; 5 if this
   process isn't retrying it) and `Cache-Control: no-store`, with a JSON body naming the
-  certificate, `"status": "timestamp-pending"`, `pendingSince` and `retryAfter`. 202 rather
+  attestation, `"status": "timestamp-pending"`, `pendingSince` and `retryAfter`. 202 rather
   than 503: the server is healthy and the resource exists, its processing just isn't complete.
-  The `/provenance` SPARQL view is a plain TDB2 service and shows pending certificates already,
+  The `/provenance` SPARQL view is a plain TDB2 service and shows pending attestations already,
   signed but without the timestamp.
 - **Synchronous mode.** `jip:timestampMode sync` keeps the original behaviour: the query waits
-  for the token before the certificate is stored.
+  for the token before the attestation is stored.
 - **Policy.** `jip:timestampPolicy`:
-  - `optional` (default). Sync: if no TSA answers, the certificate is issued without a timestamp
+  - `optional` (default). Sync: if no TSA answers, the attestation is issued without a timestamp
     and a warning is logged. Async: retries continue until `jip:timestampMaxWait` (default
-    10 min) has passed since the certificate was stored; then it is released without one.
-  - `required`. Sync: the certification fails (HTTP 500, or the incoming row with
-    `SERVICE SILENT`). Async: the certificate stays pending and retries never stop, so the
+    10 min) has passed since the attestation was stored; then it is released without one.
+  - `required`. Sync: the attestation fails (HTTP 500, or the incoming row with
+    `SERVICE SILENT`). Async: the attestation stays pending and retries never stop, so the
     endpoint keeps answering 202 until a TSA answers.
 - **Configuration.** Server `ja:context`, with environment overrides `PROVENANCE_TSA_URLS`,
   `PROVENANCE_TSA_MODE`, `PROVENANCE_TSA_POLICY`, `PROVENANCE_TSA_TIMEOUT` and
   `PROVENANCE_TSA_MAX_WAIT`. A set but empty `PROVENANCE_TSA_URLS`
   turns timestamps off even if the config file names TSAs. Not configured means no timestamps,
-  and certificates are exactly as before.
+  and attestations are exactly as before.
 - **Verification.** For each token: the imprint must equal SHA-256 of the proof's signature; the
   CMS signature must verify with the TSA certificate in the token; that certificate must be a
   time-stamping certificate (critical EKU `id-kp-timeStamping` only) valid at `genTime`. Then
@@ -273,39 +273,39 @@ is out of scope" risk.
   `jip.signingKey` (system property), or the default `$FUSEKI_BASE/provenance/signing-key.pem`.
   If the file is missing, a key is generated once and written with mode 600.
 - **Publication.** The key is published as a `did:key` (`zDn…` P-256, `z82…` P-384, `z6Mk…`
-  Ed25519), which embeds the public key, so certificates verify offline.
+  Ed25519), which embeds the public key, so attestations verify offline.
   `GET /$/provenance/key` returns it as a `did:key`, a `publicKeyMultibase`, a JWK and a PEM,
   with its key type, cryptosuite and signer kind.
 
-### Certificate store
+### Attestation store
 
-- Certificates go into a **separate** TDB2 dataset, one named graph per certificate.
+- Attestations go into a **separate** TDB2 dataset, one named graph per attestation.
   It must be separate: writing into the queried dataset would bump its counter.
 - It is configured at server level with the `ja:context` setting
-  `jip:certificateStore`, whose value is the TDB2 location.
+  `jip:attestationStore`, whose value is the TDB2 location.
 - It is exposed read-only as its own Fuseki service (`/provenance`).
-- Each certificate costs one write transaction. A per-file store could replace it
-  behind the `CertificateStore` interface.
+- Each attestation costs one write transaction. A per-file store could replace it
+  behind the `AttestationStore` interface.
 
 ## 4. Verification
 
-Verification lives in the `jip-verifier` library (`CertificateVerifier`), which needs only
+Verification lives in the `jip-verifier` library (`AttestationVerifier`), which needs only
 `jena-arq` and titanium-rdfc. The CLI `xyz.larsw.jip.cli.Verify`
 (module `jip-verifier-cli`, packaged as the self-contained `jip-verify.jar`) parses
 arguments, calls the library and prints the report. Together they work as follows:
 
-1. It takes `--results r.srj` (SPARQL JSON), `--cert c.ttl` and optionally
+1. It takes `--results r.srj` (SPARQL JSON), `--attestation c.ttl` and optionally
    `--expect-key did:key:…`, `--tsa-trust system|none|anchors.pem` and `--require-timestamp`.
-2. It checks the proof against the `did:key`, over the certificate without its timestamps, and
+2. It checks the proof against the `did:key`, over the attestation without its timestamps, and
    then any RFC 3161 timestamps (see "Timestamps" above).
-3. It selects the rows whose value is the certificate IRI and rebuilds the `rs:`
-   encoding from the certified variables, adding `rs:index` only when the
-   certificate says the result is ordered.
+3. It selects the rows whose value is the attestation IRI and rebuilds the `rs:`
+   encoding from the attested variables, adding `rs:index` only when the
+   attestation says the result is ordered.
 4. It canonicalizes, compares the digest, and exits with 0 (ok) or 1 (failure).
 
-`scripts/demo.sh` runs against Docker. It runs a certified query, verifies it
+`scripts/demo.sh` runs against Docker. It runs an attested query, verifies it
 (OK), tampers with the results and verifies again (FAIL), runs an update to show
-version v→v+1 and a new certificate, and restarts the container to show the
+version v→v+1 and a new attestation, and restarts the container to show the
 counter persisted.
 
 ## 5. Packaging
@@ -314,13 +314,13 @@ counter persisted.
   the package `xyz.larsw.jip`:
   - `jip-verifier`: canonicalization, the `rs:` encoding, Data Integrity proofs
     (`DataIntegrityProof`, signing through the `ProofSigner` interface), `did:key`
-    (`DidKey`), the certificate vocabulary (`Vocab`, which also holds the namespace), RFC 3161
-    tokens (`Rfc3161`, `CertificateTimestamps`) and `CertificateVerifier`. It depends on
+    (`DidKey`), the attestation vocabulary (`Vocab`, which also holds the namespace), RFC 3161
+    tokens (`Rfc3161`, `AttestationTimestamps`) and `AttestationVerifier`. It depends on
     `jena-arq`, titanium-rdfc and BouncyCastle (`bcpkix`).
   - `jip-verifier-cli`: the `Verify` command, shaded with all its dependencies into
     `jip-verify.jar`.
-  - `jena-intrinsic-provenance` (directory `jip-fuseki`): the data version, the certify
-    SERVICE, the certificate store, the signers (`Pkcs11Signer`, `SigningKey`), the TSA client
+  - `jena-intrinsic-provenance` (directory `jip-fuseki`): the data version, the attest
+    SERVICE, the attestation store, the signers (`Pkcs11Signer`, `SigningKey`), the TSA client
     (`TimestampAuthorities`) and the Fuseki module. Jena is `provided`; `jip-verifier`,
     titanium-rdfc, `bcpkix` and `bcutil` are shaded into the jar, so Fuseki still loads one jar.
 - **Registration:** a `JenaSubsystemLifecycle` registers the assembler, the
@@ -336,13 +336,13 @@ counter persisted.
 
 ## 6. Accepted risks
 
-- Anyone who can query can create certificates, and each one is a write to the
+- Anyone who can query can create attestations, and each one is a write to the
   provenance store. That can be abused to make the server do a lot of writes.
-- The times inside a certificate come from the server clock. An RFC 3161 timestamp, when
-  configured, proves when the certificate was signed, but not those values. TSA certificates
+- The times inside an attestation come from the server clock. An RFC 3161 timestamp, when
+  configured, proves when the attestation was signed, but not those values. TSA certificates
   are not checked for revocation.
-- A timestamped certificate costs one outgoing HTTP request, and public TSAs rate-limit. In
-  async mode the requests run on one background thread, so a burst of certificates queues up
+- A timestamped attestation costs one outgoing HTTP request, and public TSAs rate-limit. In
+  async mode the requests run on one background thread, so a burst of attestations queues up
   and their 202 phase gets longer; in sync mode the request runs while the query waits.
 - If one request touches several versioned datasets, the headers report the last
   one that was observed.
@@ -359,12 +359,12 @@ These are the places where building the PoC refined the plan above.
   So the component is looked up through the coordinator's `listExternals()`, which survives
   compaction, rather than only through the dataset context.
 - **`jip:dataVersion()` outside a transaction.** TDB2 autocommits each access, so there is no
-  single snapshot, and the function returns the last committed version. The certify SERVICE
+  single snapshot, and the function returns the last committed version. The attest SERVICE
   instead opens its own read transaction, so its version and its data always match.
 - **TDB2 outside a transaction (embedded use).** In Jena 6.2.0, lazily evaluated patterns fail
   outside a transaction even without this module. Embedded callers must use
   `Txn.executeRead`; Fuseki always does.
-- **Error status.** A refused certification (unversioned dataset, cap exceeded, write
+- **Error status.** A refused attestation (unversioned dataset, cap exceeded, write
   transaction) reaches the client as HTTP 500, because Fuseki maps execution-time exceptions
   to 500.
 - **Docker security.** In UI mode Fuseki writes a `shiro.ini` that limits `/$/**` to localhost.

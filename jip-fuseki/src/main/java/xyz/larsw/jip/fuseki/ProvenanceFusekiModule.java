@@ -6,9 +6,9 @@ import org.apache.jena.fuseki.main.FusekiServer;
 import org.apache.jena.fuseki.main.sys.FusekiAutoModule;
 import org.apache.jena.query.ARQ;
 import org.apache.jena.rdf.model.Model;
-import xyz.larsw.jip.cert.ProvenanceKeys;
-import xyz.larsw.jip.cert.ProvenanceSigner;
-import xyz.larsw.jip.cert.TimestampAuthorities;
+import xyz.larsw.jip.attestation.ProvenanceKeys;
+import xyz.larsw.jip.attestation.ProvenanceSigner;
+import xyz.larsw.jip.attestation.TimestampAuthorities;
 import xyz.larsw.jip.sys.InitJIP;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
  * Fuseki integration, loaded automatically from the classpath (ServiceLoader):
  * the {@code /$/provenance/*} endpoints and the data version response header filter.
  * <p>
- * The assembler, functions and certify SERVICE are registered by {@link InitJIP} (Jena system
+ * The assembler, functions and attest SERVICE are registered by {@link InitJIP} (Jena system
  * initialization) and do not depend on Fuseki.
  */
 public class ProvenanceFusekiModule implements FusekiAutoModule {
@@ -48,7 +48,7 @@ public class ProvenanceFusekiModule implements FusekiAutoModule {
 
     @Override
     public void serverAfterStarting(FusekiServer server) {
-        // Certificates whose timestamp was still being fetched when the server stopped.
+        // Attestations whose timestamp was still being fetched when the server stopped.
         try {
             TimestampAuthorities.resumePending(ARQ.getContext());
         } catch (RuntimeException ex) {

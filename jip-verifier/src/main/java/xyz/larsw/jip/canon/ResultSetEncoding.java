@@ -18,11 +18,11 @@ import org.apache.jena.vocabulary.RDF;
  *
  * <pre>
  * _:R a rs:ResultSet ;
- *     rs:resultVariable "v" ;              # each certified variable
+ *     rs:resultVariable "v" ;              # each attested variable
  *     rs:solution _:S1 , ... .
  * _:Si rs:index i .                        # only if ordered (1-based)
  * _:Si rs:binding _:B .
- * _:B  rs:variable "v" ; rs:value term .   # bound certified variables only
+ * _:B  rs:variable "v" ; rs:value term .   # bound attested variables only
  * </pre>
  *
  * Blank node values keep their identity: the same blank node in two rows is the same RDF
@@ -44,7 +44,7 @@ public final class ResultSetEncoding {
     /**
      * Encode the rows.
      *
-     * @param variables certified variable names (without '?'); other variables in the rows are ignored
+     * @param variables attested variable names (without '?'); other variables in the rows are ignored
      * @param rows      the solutions, in delivery order
      * @param ordered   add {@code rs:index} to each solution
      */

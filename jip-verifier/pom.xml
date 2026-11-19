@@ -15,7 +15,7 @@
 
   <name>Jena intrinsic provenance: verifier library</name>
   <description>
-    Offline verification of jip result certificates: RDFC-1.0 canonicalization, the rs: result
+    Offline verification of jip result attestations: RDFC-1.0 canonicalization, the rs: result
     encoding, eddsa-rdfc-2022 Data Integrity proofs, Ed25519 did:key and RFC 3161 timestamp
     tokens. Needs jena-arq, titanium-rdfc and BouncyCastle; no TDB2 or Fuseki.
   </description>

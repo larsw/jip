@@ -15,7 +15,7 @@
 
   <name>Jena intrinsic provenance: Fuseki module</name>
   <description>
-    Persistent TDB2 data version counter, the certify SERVICE, the certificate store and
+    Persistent TDB2 data version counter, the attest SERVICE, the attestation store and
     signing, for Apache Jena / Fuseki. One jar for Fuseki's extension directory: the verifier
     library and titanium-rdfc (relocated) are shaded in.
   </description>

@@ -190,7 +190,7 @@ def page(g, embedded):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)}</title>
-<meta name="description" content="RDF vocabulary for persistent TDB2 data versions and signed PROV-O certificates of SPARQL results.">
+<meta name="description" content="RDF vocabulary for persistent TDB2 data versions and signed PROV-O attestations of SPARQL results.">
 <link rel="alternate" type="text/turtle" href="jip.ttl">
 <link rel="alternate" type="application/ld+json" href="jip.jsonld">
 <link rel="alternate" type="application/n-triples" href="jip.nt">
