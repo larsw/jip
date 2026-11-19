@@ -136,7 +136,8 @@ made with the \code{ecdsa-rdfc-2019} cryptosuite by a P-256 or P-384 key that st
 PKCS\#11 token in a separate signer process; an Ed25519 key file with \code{eddsa-rdfc-2022} is
 an option. Optionally, an RFC~3161
 time-stamping authority co-signs the attestation's signature in the background, which fixes
-when the attestation existed independently of the server's clock without delaying the query. A standalone verifier checks a saved
+when the attestation existed independently of the server's clock without delaying the query. If the request was authenticated, the
+attestation also names the user who asked for it. A standalone verifier checks a saved
 result against its attestation without contacting the server. The implementation passes all 65
 tests of the W3C RDFC-1.0 test suite, matches the \code{eddsa-rdfc-2022} and
 \code{ecdsa-rdfc-2019} test vectors, and digests 10,000 solutions, the default maximum, in about one second.
@@ -812,49 +813,54 @@ links to an RFC~3161 timestamp with \code{jip:timestamp} (Section~\ref{sec:times
 \node[entity]   (result) at (0,-2.7)   {\texttt{<C\#result>}\\jip:SolutionSequence};
 \node[activity] (exec)   at (7.4,-2.7) {\texttt{<C\#exec>}\\jip:QueryExecution};
 \node[entity]   (state)  at (0,-5.4)   {\texttt{<DB\#v1>}\\jip:DatasetState};
-\node[agent]    (agent)  at (7.4,-5.6) {\texttt{<did:key:zDn...>}\\prov:SoftwareAgent};
+\node[agent]    (agent)  at (9.3,-6.3) {\texttt{<did:key:zDn...>}\\prov:SoftwareAgent};
 \node[entity]   (dset)   at (0,-8.1)   {\texttt{<https://example.org/datasets/ds>}};
 \node[plain]    (stamp)  at (7.4,2.3)  {\texttt{\_:t}\\jip:RFC3161Timestamp};
+\node[agent]    (user)   at (5.5,-6.3) {\texttt{<C\#requester>}\\prov:Agent\\role jip:requester};
 
 \draw[->] (cert) -- node[lbl, above=1pt] {sec:proof} (proof);
 \draw[->] (cert) |- node[lbl, above=1pt, pos=0.75] {jip:timestamp} (stamp);
 \draw[->, dashed] (stamp) -- node[lbl, right=1pt] {covers proofValue} (proof);
 \draw[->] (cert) -- node[lbl, right=1pt] {jip:attests} (result);
 \draw[->] (result) -- node[lbl, above=1pt] {prov:wasGeneratedBy} (exec);
-\draw[->] (exec) -- node[lbl, right=1pt] {prov:wasAssociatedWith} (agent);
+\draw[->] (exec) -- node[lbl, sloped, above=1pt] {wasAssociatedWith} (agent);
 \draw[->] (result) -- node[lbl, left=1pt] {prov:wasDerivedFrom} (state);
 \draw[->] (exec) -- node[lbl, sloped, above=1pt, pos=0.45] {prov:used} (state);
 \draw[->] (state) -- node[lbl, right=1pt] {prov:specializationOf} (dset);
 \draw[->, dashed] (proof.east) -- ++(2.2,0) |- node[lbl, sloped, above=1pt, pos=0.25] {sec:verificationMethod} (agent.east);
+\draw[->] (exec) -- node[lbl, sloped, above=1pt] {wasAssociatedWith} (user);
 \end{tikzpicture}
 \caption{Structure of an attestation, drawn with the PROV conventions: entities as ellipses,
-activities as rectangles, agents as pentagons. The dashed proof and timestamp nodes are not
+activities as rectangles, agents as pentagons; \code{wasAssociatedWith} is
+\code{prov:wasAssociatedWith}. The dashed proof and timestamp nodes are not
 part of PROV. The proof's verification method is the key in the agent's \code{did:key}; the
-optional timestamp covers the proof's signature value.}
+optional timestamp covers the proof's signature value. If the request was authenticated, the
+execution is also associated with the requester, in the role \code{jip:requester} (a
+\code{prov:qualifiedAssociation}).}
 \label{fig:prov}
 \end{figure}
 
 \needspace{10\baselineskip}
 \begin{lstlisting}[language=Turtle, caption={An attestation from the demo, with prefixes added and long literals shortened.}, label={lst:attestation}]
-PREFIX c:   <urn:uuid:4c28726e-34c3-4e21-afc6-071e326952c5#>
-PREFIX db:  <urn:uuid:bc2ff52d-8b91-4a09-8d1a-5fad4b0ef1f6#>
-PREFIX key: <did:key:zDnaef8aTVdxK9BwVda4B8sB44dApsDei3MQuxQHFRJMUYTdS#>
+PREFIX c:   <urn:uuid:dff90aab-fb4f-4347-b658-94b372abdeb5#>
+PREFIX db:  <urn:uuid:93e908db-a683-4389-8ff4-c008a297aa47#>
+PREFIX key: <did:key:zDnaeX6khQiw3MGrX7tPrhys1U4D7W8xZkoLKpCGxPAXvBR57#>
 
-<urn:uuid:4c28726e-34c3-4e21-afc6-071e326952c5>
+<urn:uuid:dff90aab-fb4f-4347-b658-94b372abdeb5>
     a jip:ResultAttestation, prov:Entity ;
     jip:attests c:result ;
     sec:proof [
         a sec:DataIntegrityProof ;
         sec:cryptosuite "ecdsa-rdfc-2019"^^sec:cryptosuiteString ;
-        sec:verificationMethod key:zDnaef8aTVdxK9BwVda4B8sB44dApsDei3MQuxQHFRJMUYTdS ;
+        sec:verificationMethod key:zDnaeX6khQiw3MGrX7tPrhys1U4D7W8xZkoLKpCGxPAXvBR57 ;
         sec:proofPurpose sec:assertionMethod ;
-        dcterms:created "2026-11-19T15:48:14Z"^^xsd:dateTime ;
-        sec:proofValue "z5JmVw16ggx2...4q5DFGJ6"^^sec:multibase ] ;
+        dcterms:created "2026-11-19T16:06:19Z"^^xsd:dateTime ;
+        sec:proofValue "z5E1pdrgaHUb...RePDe3V1"^^sec:multibase ] ;
     jip:timestamp [
         a jip:RFC3161Timestamp ;
-        jip:timestampToken "MIIXagYJKoZIhvcNAQcCoIIXWzCC..."^^xsd:base64Binary ;
+        jip:timestampToken "MIIXaQYJKoZIhvcNAQcCoIIXWjCC..."^^xsd:base64Binary ;
         jip:timestampAuthority <http://timestamp.digicert.com> ;
-        jip:timestampTime "2026-11-19T15:48:14Z"^^xsd:dateTime ] .
+        jip:timestampTime "2026-11-19T16:06:19Z"^^xsd:dateTime ] .
 
 c:result a jip:SolutionSequence, prov:Entity ;
     prov:wasGeneratedBy c:exec ;
@@ -868,9 +874,12 @@ c:result a jip:SolutionSequence, prov:Entity ;
 
 c:exec a jip:QueryExecution, prov:Activity ;
     prov:used db:v1 ;
-    prov:wasAssociatedWith <did:key:zDnaef8aTVdxK9BwVda4B8sB44dApsDei3MQuxQHFRJMUYTdS> ;
-    prov:startedAtTime "2026-11-19T15:48:14.441260126Z"^^xsd:dateTime ;
-    prov:endedAtTime   "2026-11-19T15:48:14.458049865Z"^^xsd:dateTime ;
+    prov:wasAssociatedWith <did:key:zDnaeX6khQiw3MGrX7tPrhys1U4D7W8xZkoLKpCGxPAXvBR57> ;
+    prov:wasAssociatedWith c:requester ;
+    prov:qualifiedAssociation [ a prov:Association ;
+        prov:agent c:requester ; prov:hadRole jip:requester ] ;
+    prov:startedAtTime "2026-11-19T16:06:19.167939481Z"^^xsd:dateTime ;
+    prov:endedAtTime   "2026-11-19T16:06:19.191863895Z"^^xsd:dateTime ;
     jip:servicePattern "SELECT ?name ?email WHERE { ... } ORDER BY ?name" ;
     jip:queryText "PREFIX jip: <https://larsw.xyz/jip/> ..." .
 
@@ -878,14 +887,42 @@ db:v1 a jip:DatasetState, prov:Entity ;
     jip:dataVersion 1 ;
     prov:specializationOf <https://example.org/datasets/ds> .
 
-<did:key:zDnaef8aTVdxK9BwVda4B8sB44dApsDei3MQuxQHFRJMUYTdS>
+<did:key:zDnaeX6khQiw3MGrX7tPrhys1U4D7W8xZkoLKpCGxPAXvBR57>
     a prov:SoftwareAgent ;
-    rdfs:label "jena-intrinsic-provenance 0.13.0 on Apache Jena 6.2.0" .
+    rdfs:label "jena-intrinsic-provenance 0.14.0 on Apache Jena 6.2.0" .
+
+c:requester a prov:Agent ;
+    jip:principal "alice" ;
+    jip:authenticationScheme "BASIC" .
 \end{lstlisting}
 
 The attestation holds the digest of the rows and never the rows themselves, so its size
 doesn't grow with the result. It does contain the query text, which has privacy implications
 (Section~\ref{sec:risks}).
+
+\subsection{The Requester}
+\label{sec:requester}
+
+An attestation can say who asked for it. If the HTTP request was authenticated, the query
+execution is associated with a second agent besides the server's key: \code{<C\#requester>},
+a \code{prov:Agent} with the authenticated name (\code{jip:principal}) and, if known, the
+authentication scheme (\code{jip:authenticationScheme}). A qualified association gives it the
+role \code{jip:requester}, which separates it from the server agent. The statement is part of
+the signed document, so the server vouches that it authenticated this principal; it says
+nothing about how strong that authentication was. Anonymous requests have no requester, and the
+setting \code{jip:recordRequester} (or \code{PROVENANCE\_RECORD\_REQUESTER}) turns recording
+off. The verifier reports the requester (Example~\ref{lst:verify}).
+
+The module takes the requester from the servlet request (\code{getRemoteUser()}), so it works
+with whatever authenticated the request: Fuseki's Shiro module, its password file, or a
+bearer-token filter. Fuseki doesn't pass the HTTP user into the query's context, but it
+evaluates the query on the request's thread, so a servlet filter records the user per thread
+and the attest executor reads it there. The filter must run after the authentication filter.
+Fuseki modules add filters in two steps, \code{prepare} and \code{configured}; authentication
+modules use the first, so the module adds its filter in the second. Shiro doesn't report the
+scheme through \code{getAuthType()}, so the filter falls back to the scheme of the
+\code{Authorization} header. Embedded applications can put the requester into the query context
+instead.
 
 \subsection{Signing}
 \label{sec:signing}
@@ -937,9 +974,9 @@ The token is added after signing, as a node of its own:
 \begin{lstlisting}[language=Turtle, numbers=none]
 <C> jip:timestamp _:t .
 _:t a jip:RFC3161Timestamp ;
-    jip:timestampToken "MIIXagYJKoZIhvcNAQcCoIIXWzCC..."^^xsd:base64Binary ;
+    jip:timestampToken "MIIXaQYJKoZIhvcNAQcCoIIXWjCC..."^^xsd:base64Binary ;
     jip:timestampAuthority <http://timestamp.digicert.com> ;
-    jip:timestampTime "2026-11-19T15:48:14Z"^^xsd:dateTime .
+    jip:timestampTime "2026-11-19T16:06:19Z"^^xsd:dateTime .
 \end{lstlisting}
 Only the token is evidence. The authority and the time are copies for queries over the
 attestation store; the verifier reports what the token says. The timestamp triples are not part
@@ -978,8 +1015,8 @@ HTTP/1.1 202 Accepted
 Retry-After: 1
 Content-Type: application/json
 
-{"attestation":"urn:uuid:4c28726e-34c3-4e21-afc6-071e326952c5","status":"timestamp-pending",
- "pendingSince":"2026-11-19T15:48:14.462409701Z","retryAfter":1}
+{"attestation":"urn:uuid:dff90aab-fb4f-4347-b658-94b372abdeb5","status":"timestamp-pending",
+ "pendingSince":"2026-11-19T16:06:19.197953702Z","retryAfter":1}
 \end{lstlisting}
 
 The policy (\code{jip:timestampPolicy}) decides what happens when no TSA answers. With
@@ -1093,13 +1130,13 @@ key type, cryptosuite, and signer, as Example~\ref{lst:key} shows.
 \needspace{14\baselineskip}
 \begin{lstlisting}[caption={The public key as returned by \code{GET /\$/provenance/key} in the demo (PEM shortened).}, label={lst:key}]
 {
-  "id": "did:key:zDnaef8aTVdxK9BwVda4B8sB44dApsDei3MQuxQHFRJMUYTdS",
-  "verificationMethod": "did:key:zDnaef...YTdS#zDnaef...YTdS",
+  "id": "did:key:zDnaeX6khQiw3MGrX7tPrhys1U4D7W8xZkoLKpCGxPAXvBR57",
+  "verificationMethod": "did:key:zDnaeX...BR57#zDnaeX...BR57",
   "type": "Multikey",
-  "publicKeyMultibase": "zDnaef8aTVdxK9BwVda4B8sB44dApsDei3MQuxQHFRJMUYTdS",
+  "publicKeyMultibase": "zDnaeX6khQiw3MGrX7tPrhys1U4D7W8xZkoLKpCGxPAXvBR57",
   "publicKeyJwk": { "kty": "EC", "crv": "P-256",
-                    "x": "2mrjn7lHG8EcnzZ3EFBdIIdEou2g1nt-jtLX5yOwAjE",
-                    "y": "KjM6iQdfmWmxJWnIXu-Bktg7hmzQJyYMp8rwJdm2faA" },
+                    "x": "YxXPePpoq469nrux3bIEobHkxJzkD-1Gb5aeDq6UPy4",
+                    "y": "QwneX535B14LKMGp9Rs8mumPqzz3wiKKbtk_dxIJWnI" },
   "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZI...",
   "keyType": "P-256",
   "cryptosuite": "ecdsa-rdfc-2019",
@@ -1158,21 +1195,22 @@ status 0 when everything matches, 1 when something doesn't, and 2 when the input
 can't be read. Example~\ref{lst:verify} shows a successful run, followed by a run on the same
 results with one email address changed.
 
-\needspace{18\baselineskip}
+\needspace{19\baselineskip}
 \begin{lstlisting}[basicstyle=\ttfamily\footnotesize, caption={Verifier output for the demo results and for a tampered copy (key IRIs shortened, TSA line wrapped).}, label={lst:verify}]
-$ verify -r results.srj -a attestation.ttl -k did:key:zDnaef...YTdS
-Attestation     : urn:uuid:4c28726e-34c3-4e21-afc6-071e326952c5
-Signed by       : did:key:zDnaef...YTdS#zDnaef...YTdS
+$ verify -r results.srj -a attestation.ttl -k did:key:zDnaeX...BR57
+Attestation     : urn:uuid:dff90aab-fb4f-4347-b658-94b372abdeb5
+Signed by       : did:key:zDnaeX...BR57#zDnaeX...BR57
 Signature       : OK
-Timestamp       : OK  2026-11-19T15:48:14Z  (trusted)
+Timestamp       : OK  2026-11-19T16:06:19Z  (trusted)
   TSA           : C=US,O=DigiCert\, Inc.,CN=DigiCert SHA256 RSA4096 Timestamp
                   Responder 2026 1  via http://timestamp.digicert.com
-Dataset state   : urn:uuid:bc2ff52d-8b91-4a09-8d1a-5fad4b0ef1f6#v1  (version 1)
+Requested by    : alice (BASIC)
+Dataset state   : urn:uuid:93e908db-a683-4389-8ff4-c008a297aa47#v1  (version 1)
 Solutions       : 3 attested, 3 row(s) carry this attestation
 Result digest   : OK
 VERIFIED
 
-$ verify -r results-tampered.srj -a attestation.ttl -k did:key:zDnaef...YTdS
+$ verify -r results-tampered.srj -a attestation.ttl -k did:key:zDnaeX...BR57
 ...
 Result digest   : MISMATCH
 Problem         : Result digest mismatch: attestation feb2d70a...f06efebe, rows b1c94dd9...92ecdc56
@@ -1220,11 +1258,12 @@ demo's \file{docker-compose.yml} sets them through the environment instead, with
 Sectigo, and FreeTSA as the priority list, so the list can change without editing the
 configuration file.
 
-Table~\ref{tab:endpoints} lists the HTTP endpoints the module adds. When Fuseki runs with its
-user interface and finds no \file{shiro.ini}, it creates one that limits everything under
-\code{/\$/} to requests from localhost. The Docker image installs one that also allows anonymous access to
-\code{/\$/provenance/**}, and keeps the localhost rule for the rest of the administration
-area.
+Table~\ref{tab:endpoints} lists the HTTP endpoints the module adds. The Docker image passes
+its own Shiro configuration to Fuseki (\file{docker/shiro.ini}, replaceable with
+\code{FUSEKI\_SHIRO}). It requires HTTP Basic authentication, with the demo users alice and
+bob, for the dataset, the attestation store, and attestations, because attestations name their
+requesters. The signing key, the data versions, and the ping endpoint stay public, and the rest
+of the administration area is limited to localhost.
 
 \begin{table}[ht]
 \centering
@@ -1269,7 +1308,7 @@ the same image without installing Java.
 \subsection{Test Suite}
 \label{sec:tests}
 
-The build runs 162 tests, listed in Table~\ref{tab:tests}. They pass on Java 21 during the
+The build runs 166 tests, listed in Table~\ref{tab:tests}. They pass on Java 21 during the
 Docker build. On the development machine (OpenJDK 25) the four PKCS\#11 tests are skipped,
 because they need SoftHSM2, and the others pass.
 
@@ -1304,20 +1343,24 @@ trust anchors, a token for another signature, a corrupted token, TSA certificate
 \code{genTime}, reply and request matching. \\
 \code{TimestampAuthoritiesTest} & 4 & Fallback through a refusing and an unreachable TSA,
 cooldown order, configuration parsing. \\
-\code{AttestServiceTest} & 18 & Round trips for ordered and unordered results, tampering,
+\code{AttestServiceTest} & 21 & Round trips for ordered and unordered results, tampering,
 both empty-result modes, variable names, the cap, unversioned datasets and \code{SILENT}, the
 write-transaction refusal, versions after updates, correlated calls, timestamped
 attestations, both timestamp policies in both modes, a query that doesn't wait for a held-back
-TSA, resuming pending timestamps after a restart without a second token. \\
+TSA, resuming pending timestamps after a restart without a second token, the requester from
+the query context and from the request thread, signed and verified, turned off, and absent for
+anonymous requests. \\
 \code{CanonicalizationCapacityTest} & 1 & Digest time at 10,000 solutions. \\
 \code{FusekiIntegrationTest} & 2 & End to end over HTTP with \file{docker/config.ttl}; 202
 with \code{Retry-After} while a timestamp is pending, then 200. \\
+\code{AuthenticatedRequesterTest} & 1 & Over HTTP with Basic authentication (Fuseki's password
+file): 401 without a login; alice's and bob's attestations name them and verify. \\
 \code{VocabularyTest} & 3 & \file{vocab/jip.ttl} defines every \code{jip:} term the code uses,
 and no others (Appendix~\ref{app:vocab}). \\
 \code{VerifyTest} & 9 & Exit status of the verifier command for good, bad, and missing
 arguments, including the timestamp options. \\
 \midrule
-Total & 162 & \\
+Total & 166 & \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1343,8 +1386,8 @@ with the vector's key and verifying the result.
 \label{sec:demo}
 
 The script \file{scripts/demo.sh} runs against the Docker image. Table~\ref{tab:demo} shows a
-run that started with empty volumes, with the PKCS\#11 signer in its own container and the
-default TSA list: DigiCert, Sectigo, and FreeTSA.
+run that started with empty volumes, with the PKCS\#11 signer in its own container, HTTP Basic
+authentication, and the default TSA list: DigiCert, Sectigo, and FreeTSA.
 
 \begin{table}[ht]
 \centering
@@ -1357,28 +1400,29 @@ default TSA list: DigiCert, Sectigo, and FreeTSA.
 \midrule
 1 & Start the signer and Fuseki & The module creates a P-256 key on the signer's token;
 \code{/\$/provenance/key} reports \code{pkcs11}, \code{ecdsa-rdfc-2019}, and
-\code{did:key:zDnaef...YTdS} (Example~\ref{lst:key}). \\
+\code{did:key:zDnaeX...BR57} (Example~\ref{lst:key}). \\
 2 & Load three people through the Graph Store Protocol & Response header
 \code{X-Dataset-Version: 1}. \\
-3 & Run the attested query (Example~\ref{lst:query}) & Three rows with one attestation;
+3 & Run the attested query (Example~\ref{lst:query}), first without logging in, then as
+alice & Without a login: HTTP 401. As alice: three rows with one attestation;
 \code{X-Dataset-Version: 1}. \\
 4 & Fetch the attestation right after the query & \code{202 Accepted},
 \code{Retry-After: 1}, status \code{timestamp-pending} (Example~\ref{lst:pending}); about a
 second later 200 with the timestamped attestation. \\
 5 & Verify in a separate container & \code{VERIFIED}, exit status 0; the P-256 signature
-from the token checks out. Timestamp from
+from the token checks out; requested by alice (\code{BASIC}). Timestamp from
 DigiCert, trusted through the JVM trust store, in the same second as the proof's creation
 time. \\
 6 & Change one email address and verify & Digest mismatch, exit status 1. \\
-7 & Insert a fourth person, query again & Update header 2; new attestation for 4 solutions
-at version 2, verified. \\
+7 & As bob, insert a fourth person and query again & Update header 2; new attestation for 4
+solutions at version 2, requested by bob, verified. \\
 8 & Attest a pattern with no match & One row with only \code{?attestation}; attestation with 0
 solutions, verified. \\
 9 & Compare the counters & Persistent 2, internal 2. \\
 10 & Restart the container & Persistent 2, internal 0. \\
 11 & Insert one more person & Persistent 3, internal 1. \\
-12 & Query the attestation store & Three attestations, at versions 1, 2, and 2, each
-timestamped by DigiCert. \\
+12 & Query the attestation store & Three attestations, at versions 1, 2, and 2, requested by
+alice, bob, and alice, each timestamped by DigiCert. \\
 13 & Put an unreachable TSA first in the list, query again & The server logs the failed TSA
 and falls back to DigiCert; the new attestation at version 3 verifies. \\
 14 & Restart the signer container, query again & The first signature fails, the module
@@ -1431,7 +1475,9 @@ memory up to the cap, and the attestation store adds one write transaction per a
 A valid attestation, checked against a trusted key, shows that the holder of that key stated
 that these rows were the solutions of this pattern against a given database state at a given
 time. It doesn't show that the server evaluated the query correctly or that the data is true.
-A compromised server can sign anything while it is compromised. With the PKCS\#11 signer it
+If the attestation names a requester, the server also states that it authenticated that
+user for this query; the statement is only as good as the server's authentication. A
+compromised server can sign anything while it is compromised. With the PKCS\#11 signer it
 can't take the key away, though: the key stays on the token, so access ends when the server is
 cleaned up, and an HSM can log or limit what is signed. The times inside the attestation come from the
 server's clock. With a timestamp from a TSA the verifier trusts, the attestation is also known
@@ -1456,9 +1502,10 @@ whose name includes the database ID and version.
 \item Anyone who can run a query can create attestations, and each attestation is a write
   transaction on the attestation store. That can be used to make the server do a lot of
   writes. Authentication or rate limiting is needed before real use.
-\item The demo configuration exposes the attestation store as a public, read-only SPARQL
-  endpoint. Every attestation contains the full query text, so anyone can list the queries
-  that others attested.
+\item Every attestation contains the full query text and, for authenticated requests, the
+  user's name, so whoever can read the attestation store or fetch attestations sees who asked
+  what. The demo requires a login for both; \code{jip:recordRequester} stops recording users.
+  The demo's users and passwords are in plain text in \file{docker/shiro.ini}.
 \item Tools such as \code{tdb2.tdbloader} that write to the database from another JVM
   without the module don't advance the version. A byte-for-byte copy of the database
   directory shares the original's database ID; if both copies receive writes, the pair of ID
@@ -1536,7 +1583,7 @@ Maven with Java 21 or later for the local build.
 \begin{lstlisting}[language=bash, caption={Commands to build, test, and run the demo.}, label={lst:reproduce}]
 docker compose up -d --build    # build the module, run the tests on Java 21, start Fuseki
 scripts/demo.sh --reset         # end-to-end demo; --reset deletes the demo volume
-mvn test                        # the 162 tests (PKCS#11 tests need SoftHSM2)
+mvn test                        # the 166 tests (PKCS#11 tests need SoftHSM2)
 scripts/build-whitepaper.sh     # this report
 \end{lstlisting}
 
@@ -1583,6 +1630,8 @@ specializes. \\
 \code{jip:timestampTimeout} & Server setting: time allowed per TSA, in milliseconds. \\
 \code{jip:timestampMode} & Server setting: \code{async} or \code{sync}. \\
 \code{jip:timestampMaxWait} & Server setting: how long an optional timestamp is retried. \\
+\code{jip:recordRequester} & Server setting: whether attestations name the authenticated user. \\
+\code{jip:requestUser} & Query context: the requester, for embedded use. \\
 \code{jip:dataVersion()} & Function: persistent version of the current snapshot. \\
 \code{jip:tdbDataVersion()} & Function: TDB2's internal counter. \\
 \midrule
@@ -1606,6 +1655,10 @@ SPARQL text. \\
 \code{jip:timestampAuthority}, \code{jip:timestampTime} & Copies of the issuing TSA and its time,
 for queries. \\
 \code{jip:pendingTimestamps} & Graph in the attestation store listing pending attestations. \\
+\midrule
+\code{jip:requester} & The requester's role (a \code{prov:Role}) in the query execution. \\
+\code{jip:principal}, \code{jip:authenticationScheme} & The requester's authenticated name and how
+it was authenticated. \\
 \code{jip:timestampPendingSince} & When an attestation started waiting for its timestamp. \\
 \bottomrule
 \end{tabularx}
