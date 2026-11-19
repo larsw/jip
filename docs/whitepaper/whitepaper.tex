@@ -47,7 +47,7 @@
   pdftitle={Intrinsic Provenance for Apache Jena},
   pdfauthor={Lars Wilhelmsen <lars@sral.org>},
   pdfsubject={A persistent data version for TDB2 and signed certificates for SPARQL results},
-  pdfkeywords={Apache Jena, TDB2, Fuseki, SPARQL, provenance, PROV-O, RDFC-1.0, Data Integrity, eddsa-rdfc-2022},
+  pdfkeywords={Apache Jena, TDB2, Fuseki, SPARQL, provenance, PROV-O, RDFC-1.0, Data Integrity, ecdsa-rdfc-2019, PKCS\#11, RFC 3161},
 }
 \urlstyle{same}
 
@@ -131,13 +131,15 @@ transaction and is written to TDB2's journal in the same commit as the data, so 
 compaction, and crashes leave it consistent with the data. The second part is a SPARQL
 \code{SERVICE} that certifies the solutions of the pattern inside it. Each certificate is a
 PROV-O graph that names the database state, records a SHA-256 digest of the solutions after
-RDF Dataset Canonicalization (RDFC-1.0), and carries a W3C Data Integrity proof made with the
-\code{eddsa-rdfc-2022} cryptosuite and a \code{did:key}. Optionally, an RFC~3161
+RDF Dataset Canonicalization (RDFC-1.0), and carries a W3C Data Integrity proof. The proof is
+made with the \code{ecdsa-rdfc-2019} cryptosuite by a P-256 or P-384 key that stays on a
+PKCS\#11 token in a separate signer process; an Ed25519 key file with \code{eddsa-rdfc-2022} is
+an option. Optionally, an RFC~3161
 time-stamping authority co-signs the certificate's signature in the background, which fixes
 when the certificate existed independently of the server's clock without delaying the query. A standalone verifier checks a saved
 result against its certificate without contacting the server. The implementation passes all 65
-tests of the W3C RDFC-1.0 test suite, reproduces the \code{eddsa-rdfc-2022} test vector byte
-for byte, and digests 10,000 solutions, the default maximum, in about one second.
+tests of the W3C RDFC-1.0 test suite, matches the \code{eddsa-rdfc-2022} and
+\code{ecdsa-rdfc-2019} test vectors, and digests 10,000 solutions, the default maximum, in about one second.
 \end{abstract}
 
 \setcounter{tocdepth}{1}
@@ -170,8 +172,9 @@ counter that TDB2 writes to its own journal in the same commit as the data, and 
 that recovers it after a crash. For RQ2, Section~\ref{sec:cert} describes a \code{SERVICE}
 that evaluates the pattern inside it, encodes the solutions as RDF, canonicalizes and hashes
 them, and signs a PROV-O certificate with the W3C Data Integrity cryptosuite
-\code{eddsa-rdfc-2022}~\cite{vcdi,eddsa}. It also covers optional timestamps from an
-RFC~3161 time-stamping authority and an offline verifier.
+\code{ecdsa-rdfc-2019}~\cite{vcdi,ecdsa}, using a key that is held on a PKCS\#11 token in a
+separate process. It also covers optional timestamps from an RFC~3161 time-stamping authority
+and an offline verifier.
 Section~\ref{sec:fuseki} shows how the module plugs into Fuseki without changes to Jena,
 Section~\ref{sec:eval} reports tests and measurements, and Section~\ref{sec:discussion}
 discusses what a certificate proves and what it leaves open.
@@ -214,12 +217,16 @@ fetch the certificate and verify the rows offline.
 \draw[->] (arq.east) -- node[lbl, below=2pt, sloped, pos=0.5] {certificate} (prov.west);
 \draw[<-] (servlet.east) -- node[lbl, below=2pt] {fetch} (prov.west);
 
-\node[ext, below=9mm of fuseki.south, text width=40mm] (tsa) {Time-stamping authorities\\(RFC 3161, optional)};
-\draw[<->, dashed] (fuseki.south) -- node[lbl, right=2pt] {signature hash /\\timestamp token} (tsa.north);
+\node[ext, text width=34mm, anchor=north] (tsa) at ($(fuseki.south) + (-9mm,-10mm)$) {Time-stamping authorities\\(RFC 3161, optional)};
+\draw[<->, dashed] ($(fuseki.south) + (-9mm,0)$) -- node[lbl, left=2pt] {signature hash /\\timestamp token} (tsa.north);
+\node[draw=black!70, thick, fill=provAgent!25, rounded corners=4pt, align=center, text width=27mm,
+      inner sep=3pt, below=11mm of prov] (signer) {\textbf{Signer process}\\(own container)\\PKCS\#11 token\\with the private key};
+\draw[<->] ($(fuseki.south east) + (-5mm,0)$) |- node[lbl, pos=0.75, below=2pt] {\texttt{C\_Sign} over\\a Unix socket} (signer.west);
 \end{tikzpicture}
-\caption{Components of the proof of concept and the path of a certified query. If time-stamping
-authorities are configured, a background worker asks one of them to co-sign each certificate
-after the query has returned.}
+\caption{Components of the proof of concept and the path of a certified query. The signing key
+stays in a separate signer process (Figure~\ref{fig:separation}); Fuseki asks it for each
+signature. If time-stamping authorities are configured, a background worker asks one of them
+to co-sign each certificate after the query has returned.}
 \label{fig:architecture}
 \end{figure}
 
@@ -322,9 +329,30 @@ with RDFC-1.0, hashes each with SHA-256, concatenates the two hashes, and signs 
 Ed25519~\cite{rfc8032}. The signature is stored as a multibase string in base58btc encoding,
 recognizable by its leading \code{z}.
 
+The cryptosuite \code{ecdsa-rdfc-2019}~\cite{ecdsa} has the same structure but signs with
+ECDSA on the NIST curves P-256 or P-384. The hash is SHA-256 for P-256 and SHA-384 for P-384, and
+the signature is the concatenation of its two values $r$ and $s$.
+
 The verification method used here is a \code{did:key}~\cite{didkey}, a decentralized
 identifier that contains the public key. A verifier reads the key out of the identifier and
-doesn't need to fetch anything.
+doesn't need to fetch anything. The key type is part of the identifier: Ed25519 keys start with
+\code{z6Mk}, P-256 keys with \code{zDn}, and P-384 keys with \code{z82}.
+
+\subsection{PKCS\#11}
+\label{sec:pkcs11}
+
+PKCS\#11~\cite{pkcs11} is the standard C interface to cryptographic tokens: hardware security
+modules (HSMs), smart cards, cloud key services, and software tokens such as
+SoftHSM~\cite{softhsm}. An application loads the token's \emph{module}, a shared library, logs
+in with a PIN, finds a key by its label, and asks the token to sign with it
+(\code{C\_SignInit}, \code{C\_Sign}). A private key created on the token with the
+non-extractable flag never leaves it; the application only ever holds a handle. Java reaches
+PKCS\#11 through the JDK's SunPKCS11 provider.
+
+A module normally runs inside the application's process. p11-kit~\cite{p11kit} separates the
+two: \code{p11-kit server} loads the real module in one process and serves it on a Unix
+socket, and the application loads \code{p11-kit-client.so}, a module that forwards every
+PKCS\#11 call over that socket. To the application it is an ordinary token.
 
 \subsection{Trusted Timestamps}
 \label{sec:tsp}
@@ -781,7 +809,7 @@ links to an RFC~3161 timestamp with \code{jip:timestamp} (Section~\ref{sec:times
 \node[entity]   (result) at (0,-2.7)   {\texttt{<C\#result>}\\jip:SolutionSequence};
 \node[activity] (exec)   at (7.4,-2.7) {\texttt{<C\#exec>}\\jip:QueryExecution};
 \node[entity]   (state)  at (0,-5.4)   {\texttt{<DB\#v1>}\\jip:DatasetState};
-\node[agent]    (agent)  at (7.4,-5.6) {\texttt{<did:key:z6Mk...>}\\prov:SoftwareAgent};
+\node[agent]    (agent)  at (7.4,-5.6) {\texttt{<did:key:zDn...>}\\prov:SoftwareAgent};
 \node[entity]   (dset)   at (0,-8.1)   {\texttt{<https://example.org/datasets/ds>}};
 \node[plain]    (stamp)  at (7.4,2.3)  {\texttt{\_:t}\\jip:RFC3161Timestamp};
 
@@ -805,25 +833,25 @@ optional timestamp covers the proof's signature value.}
 
 \needspace{10\baselineskip}
 \begin{lstlisting}[language=Turtle, caption={A certificate from the demo, with prefixes added and long literals shortened.}, label={lst:certificate}]
-PREFIX c:   <urn:uuid:e0963ba2-6bc0-4264-9ed2-25b02f9e5a8a#>
-PREFIX db:  <urn:uuid:b3e69821-de0f-460d-b6d3-402bc1a38c8b#>
-PREFIX key: <did:key:z6MkmWjXFhHNjDJZDh3dJUmC7YSUJK3LZMXNRz4ZUmxDWKuw#>
+PREFIX c:   <urn:uuid:308afd1b-62ed-4377-98ee-8cb9335561cf#>
+PREFIX db:  <urn:uuid:5f795155-cd0e-4a1a-ab18-45054b899feb#>
+PREFIX key: <did:key:zDnaexiU9JaqEPUYG1ipD22upCZMAQAhXRtQrBsdGRAUue8Eq#>
 
-<urn:uuid:e0963ba2-6bc0-4264-9ed2-25b02f9e5a8a>
+<urn:uuid:308afd1b-62ed-4377-98ee-8cb9335561cf>
     a jip:ResultCertificate, prov:Entity ;
     jip:certifies c:result ;
     sec:proof [
         a sec:DataIntegrityProof ;
-        sec:cryptosuite "eddsa-rdfc-2022"^^sec:cryptosuiteString ;
-        sec:verificationMethod key:z6MkmWjXFhHNjDJZDh3dJUmC7YSUJK3LZMXNRz4ZUmxDWKuw ;
+        sec:cryptosuite "ecdsa-rdfc-2019"^^sec:cryptosuiteString ;
+        sec:verificationMethod key:zDnaexiU9JaqEPUYG1ipD22upCZMAQAhXRtQrBsdGRAUue8Eq ;
         sec:proofPurpose sec:assertionMethod ;
-        dcterms:created "2026-11-19T14:17:21Z"^^xsd:dateTime ;
-        sec:proofValue "zbBGTGYCN7q7...SY867XJL"^^sec:multibase ] ;
+        dcterms:created "2026-11-19T15:12:19Z"^^xsd:dateTime ;
+        sec:proofValue "z2dmtc8nBTbv...eUcvvfNo"^^sec:multibase ] ;
     jip:timestamp [
         a jip:RFC3161Timestamp ;
-        jip:timestampToken "MIIXagYJKoZIhvcNAQcCoIIXWzCC..."^^xsd:base64Binary ;
+        jip:timestampToken "MIIXawYJKoZIhvcNAQcCoIIXXDCC..."^^xsd:base64Binary ;
         jip:timestampAuthority <http://timestamp.digicert.com> ;
-        jip:timestampTime "2026-11-19T14:17:21Z"^^xsd:dateTime ] .
+        jip:timestampTime "2026-11-19T15:12:19Z"^^xsd:dateTime ] .
 
 c:result a jip:SolutionSequence, prov:Entity ;
     prov:wasGeneratedBy c:exec ;
@@ -837,9 +865,9 @@ c:result a jip:SolutionSequence, prov:Entity ;
 
 c:exec a jip:QueryExecution, prov:Activity ;
     prov:used db:v1 ;
-    prov:wasAssociatedWith <did:key:z6MkmWjXFhHNjDJZDh3dJUmC7YSUJK3LZMXNRz4ZUmxDWKuw> ;
-    prov:startedAtTime "2026-11-19T14:17:21.123312673Z"^^xsd:dateTime ;
-    prov:endedAtTime   "2026-11-19T14:17:21.145978112Z"^^xsd:dateTime ;
+    prov:wasAssociatedWith <did:key:zDnaexiU9JaqEPUYG1ipD22upCZMAQAhXRtQrBsdGRAUue8Eq> ;
+    prov:startedAtTime "2026-11-19T15:12:19.628138290Z"^^xsd:dateTime ;
+    prov:endedAtTime   "2026-11-19T15:12:19.651054103Z"^^xsd:dateTime ;
     jip:servicePattern "SELECT ?name ?email WHERE { ... } ORDER BY ?name" ;
     jip:queryText "PREFIX jip: <https://larsw.xyz/jip/> ..." .
 
@@ -847,9 +875,9 @@ db:v1 a jip:DatasetState, prov:Entity ;
     jip:dataVersion 1 ;
     prov:specializationOf <https://example.org/datasets/ds> .
 
-<did:key:z6MkmWjXFhHNjDJZDh3dJUmC7YSUJK3LZMXNRz4ZUmxDWKuw>
+<did:key:zDnaexiU9JaqEPUYG1ipD22upCZMAQAhXRtQrBsdGRAUue8Eq>
     a prov:SoftwareAgent ;
-    rdfs:label "jena-intrinsic-provenance 0.11.0 on Apache Jena 6.2.0" .
+    rdfs:label "jena-intrinsic-provenance 0.12.0 on Apache Jena 6.2.0" .
 \end{lstlisting}
 
 The certificate holds the digest of the rows and never the rows themselves, so its size
@@ -859,26 +887,30 @@ doesn't grow with the result. It does contain the query text, which has privacy 
 \subsection{Signing}
 \label{sec:signing}
 
-The signature follows \code{eddsa-rdfc-2022} and is applied to the certificate graph directly.
+The signature follows \code{ecdsa-rdfc-2019} for P-256 and P-384 keys and
+\code{eddsa-rdfc-2022} for Ed25519 keys, and is applied to the certificate graph directly.
 Let $D$ be the certificate graph without the proof, and $P$ the proof options: the type of the
 proof node, the cryptosuite, the creation time in whole seconds, the verification method, and
 the proof purpose. With $\mathrm{C}$ for RDFC-1.0 canonicalization and $\Vert$ for
 concatenation, the signer computes
 \begin{align*}
-  h &= \mathrm{SHA\text{-}256}(\mathrm{C}(P)) \;\Vert\; \mathrm{SHA\text{-}256}(\mathrm{C}(D)), \\
-  \mathit{proofValue} &= \texttt{z} \;\Vert\; \mathrm{base58btc}(\mathrm{Ed25519}_{\mathit{sk}}(h)),
+  h &= H(\mathrm{C}(P)) \;\Vert\; H(\mathrm{C}(D)), \\
+  \mathit{proofValue} &= \texttt{z} \;\Vert\; \mathrm{base58btc}(\mathrm{Sign}_{\mathit{sk}}(h)),
 \end{align*}
+where $H$ is SHA-256 for Ed25519 and P-256 keys and SHA-384 for P-384 keys, and
+$\mathrm{Sign}$ is Ed25519 or ECDSA with $H$, giving $r \Vert s$.
 and adds the proof options, the proof value, and the triple \code{<C> sec:proof \_:proof} to
 the graph. A verifier removes the proof node's triples and the \code{sec:proof} link to
 recover $D$, drops the proof value to recover $P$, and checks the signature with the public
-key from the verification method.
+key from the verification method. It also checks that the cryptosuite fits the key type, so
+an ECDSA signature can't pass as \code{eddsa-rdfc-2022} or the other way round.
 
 In the JSON-LD form used by Verifiable Credentials, the proof sits in a separate named graph,
 because the security context declares \code{sec:proof} with an \code{@graph} container. Here
 the proof triples sit in the certificate graph, and the verifier separates them by structure.
 The hash and signature computation is the cryptosuite's, unchanged: the proof options
-canonicalize to the bytes in the specification's test vector, and the module reproduces the
-vector's proof value (Section~\ref{sec:conformance}). Off-the-shelf Verifiable Credential
+canonicalize to the bytes in the specifications' test vectors, and the module reproduces or
+verifies the vectors' proof values (Section~\ref{sec:conformance}). Off-the-shelf Verifiable Credential
 verifiers still won't accept a certificate as it is, because they expect a credential document
 in JSON-LD.
 
@@ -890,7 +922,7 @@ The times in a certificate come from the server's clock: \code{prov:startedAtTim
 as the server. Optionally, a time-stamping authority (Section~\ref{sec:tsp}) co-signs each
 certificate. The message imprint is
 \[
-  \mathit{imprint} = \mathrm{SHA\text{-}256}(\mathrm{Ed25519}_{\mathit{sk}}(h)),
+  \mathit{imprint} = \mathrm{SHA\text{-}256}(\mathrm{Sign}_{\mathit{sk}}(h)),
 \]
 the hash of the raw signature decoded from \code{sec:proofValue}. The signature covers the
 whole certificate, so the token does too, and the Data Integrity proof itself is unchanged.
@@ -902,9 +934,9 @@ The token is added after signing, as a node of its own:
 \begin{lstlisting}[language=Turtle, numbers=none]
 <C> jip:timestamp _:t .
 _:t a jip:RFC3161Timestamp ;
-    jip:timestampToken "MIIXagYJKoZIhvcNAQcCoIIXWzCC..."^^xsd:base64Binary ;
+    jip:timestampToken "MIIXawYJKoZIhvcNAQcCoIIXXDCC..."^^xsd:base64Binary ;
     jip:timestampAuthority <http://timestamp.digicert.com> ;
-    jip:timestampTime "2026-11-19T14:17:21Z"^^xsd:dateTime .
+    jip:timestampTime "2026-11-19T15:12:19Z"^^xsd:dateTime .
 \end{lstlisting}
 Only the token is evidence. The authority and the time are copies for queries over the
 certificate store; the verifier reports what the token says. The timestamp triples are not part
@@ -943,8 +975,8 @@ HTTP/1.1 202 Accepted
 Retry-After: 1
 Content-Type: application/json
 
-{"certificate":"urn:uuid:e0963ba2-6bc0-4264-9ed2-25b02f9e5a8a","status":"timestamp-pending",
- "pendingSince":"2026-11-19T14:17:21.155729227Z","retryAfter":1}
+{"certificate":"urn:uuid:308afd1b-62ed-4377-98ee-8cb9335561cf","status":"timestamp-pending",
+ "pendingSince":"2026-11-19T15:12:19.657253589Z","retryAfter":1}
 \end{lstlisting}
 
 The policy (\code{jip:timestampPolicy}) decides what happens when no TSA answers. With
@@ -962,32 +994,113 @@ service, so it shows a pending certificate already, signed but without its times
 \code{jip:pendingTimestamps} graph tells the two apart.
 
 The protocol and CMS handling come from BouncyCastle~\cite{bouncycastle}, because the JDK has no
-public API for either. BouncyCastle also handles the Ed25519 key encodings (PKCS\#8,
-SubjectPublicKeyInfo, PEM) and derives the public key from the private seed; signing and
-verifying use the JDK's Ed25519.
+public API for either. BouncyCastle also handles key encodings: PKCS\#8 and PEM for the local
+Ed25519 key, compressed curve points for P-256 and P-384 \code{did:key}s, and the self-signed
+certificate of a key created on a PKCS\#11 token. Signing and verifying use the JDK.
 
 \subsection{Keys}
 \label{sec:keys}
 
-The signing key is an Ed25519 private key in a PKCS\#8 PEM file. The module takes the path
-from the \code{PROVENANCE\_SIGNING\_KEY} environment variable, then from the
-\code{jip.signingKey} system property, and otherwise uses
-\file{provenance/signing-key.pem} under \code{FUSEKI\_BASE}, or under the working directory
-if that variable isn't set. If the file doesn't exist, the server
-generates a key on first start and writes it with permissions 600. The endpoint
-\code{GET /\$/provenance/key} publishes the public key in four forms, as
-Example~\ref{lst:key} shows.
+Where the key lives is pluggable. A \emph{signer provider}, found with Java's
+\code{ServiceLoader} and chosen by name with \code{PROVENANCE\_SIGNER}, opens the server's
+signer: a key type, a public key, and an operation that signs the hash data $h$. Two providers
+are built in.
 
-\needspace{11\baselineskip}
-\begin{lstlisting}[caption={The public key as returned by \code{GET /\$/provenance/key} (PEM shortened).}, label={lst:key}]
+\begin{description}[style=nextline, leftmargin=1.5em, font=\normalfont\code]
+\item[pkcs11 (default)] A P-256 or P-384 key on a PKCS\#11 token, used through SunPKCS11; the
+  certificates use \code{ecdsa-rdfc-2019}. The settings name the module, the slot, the PIN
+  (directly or from a file), and the key's label. With \code{PROVENANCE\_PKCS11\_GENERATE} set
+  to a curve, the module creates the key pair on the token if it is missing, together with a
+  self-signed certificate, because SunPKCS11 only lists private keys that have one.
+\item[local] An Ed25519 key in a PKCS\#8 PEM file and \code{eddsa-rdfc-2022}, as in earlier
+  versions. The path comes from \code{PROVENANCE\_SIGNING\_KEY} or \code{jip.signingKey}, and a
+  key is generated on first start if the file doesn't exist.
+\end{description}
+
+Another mechanism, such as a cloud key service or a remote signing service, is one more
+provider. The PKCS\#11 signer uses ECDSA because Java 21's SunPKCS11 has no EdDSA support, and
+EdDSA support in tokens varies: SoftHSM, for example, offers it only in builds that enable it,
+and key generation fails in some of them~\cite{softhsm704}. P-256 is supported by practically
+every token, and \code{ecdsa-rdfc-2019} is the W3C counterpart of \code{eddsa-rdfc-2022}.
+
+In the Docker setup the token is in a process and a container of its own
+(Figure~\ref{fig:separation}). The signer container runs SoftHSM2 behind \code{p11-kit server}
+and has no network at all. The Fuseki container loads \code{p11-kit-client.so}, and the two
+share only the volume that holds the socket. On first start the signer initializes its token,
+and the module creates the P-256 key on it through the socket, so the key is generated inside
+the token and never exported. For each certificate, the module sends $h$ and gets back $r
+\Vert s$. If the signer process restarts, the next signature fails, and the module reconnects
+and tries again. SunPKCS11 can't re-initialize a module it has already loaded, so the module
+loads a fresh copy of \code{p11-kit-client.so} from a new path, which the system loader treats
+as a separate library with a new connection. The p11-kit versions on both sides must match:
+a version 0.26 client and a 0.25 server couldn't create keys, so both images use the same
+Ubuntu release.
+
+\begin{figure}[htb]
+\centering
+\begin{tikzpicture}[
+  font=\sffamily\footnotesize, >={Stealth[length=2mm]},
+  box/.style={draw=black!55, fill=white, rounded corners=2pt, align=center, text width=40mm,
+              minimum height=8.5mm, inner sep=2pt},
+  key/.style={draw=black!70, fill=provAgent!45, rounded corners=2pt, align=center, text width=40mm,
+              minimum height=8.5mm, inner sep=2pt, thick},
+  lbl/.style={font=\sffamily\scriptsize, fill=white, inner sep=1.2pt, align=center},
+]
+% Fuseki container
+\node[box] (exec) {Certify \texttt{SERVICE} executor:\\certificate and hash data $h$};
+\node[box, below=6mm of exec] (signer) {\texttt{Pkcs11Signer}\\(provider \texttt{pkcs11})};
+\node[box, below=6mm of signer] (sun) {SunPKCS11 provider (JDK)};
+\node[box, below=6mm of sun] (client) {\texttt{p11-kit-client.so}};
+\node[draw=accent, thick, rounded corners=4pt, fit=(exec)(client), inner sep=3mm] (fc) {};
+\node[font=\sffamily\small\bfseries, text=accent, anchor=south, align=center] at (fc.north)
+  {Fuseki process and container\\[-1pt]\normalfont\scriptsize uid 10001, network: port 3030};
+
+% Signer container: the server on the client's row, the token above it
+\node[box, right=48mm of client] (server) {\texttt{p11-kit server}};
+\node[box, above=6mm of server] (softhsm) {\texttt{libsofthsm2.so}\\(or an HSM's module)};
+\node[key, above=6mm of softhsm] (token) {Token: P-256 private key\\non-extractable};
+\node[draw=black!70, thick, rounded corners=4pt, fit=(token)(server), inner sep=3mm] (sc) {};
+\node[font=\sffamily\small\bfseries, anchor=south, align=center] at (sc.north)
+  {Signer process and container\\[-1pt]\normalfont\scriptsize uid 10001, network: none};
+
+% The socket between them
+\coordinate (mid) at ($(fc.east)!0.5!(sc.west)$);
+\node[draw=black!55, fill=black!4, rounded corners=2pt, align=center, text width=22mm, inner sep=2pt]
+  (sock) at (mid |- client) {Unix socket\\\texttt{pkcs11.sock}\\(shared volume)};
+
+\draw[->] (exec) -- node[lbl, right=2pt] {sign($h$)} (signer);
+\draw[->] (signer) -- node[lbl, right=2pt] {JCA \texttt{Signature}} (sun);
+\draw[->] (sun) -- node[lbl, right=2pt] {\texttt{C\_Sign}} (client);
+\draw[<->, thick] (client.east) -- (sock.west);
+\draw[<->, thick] (sock.east) -- (server.west);
+\draw[->] (server) -- (softhsm);
+\draw[->] (softhsm) -- (token);
+\node[lbl, text width=28mm, above=3mm of sock] {PKCS\#11 calls in,\\results ($r \Vert s$) out;\\no key material};
+\end{tikzpicture}
+\caption{Process separation of the PKCS\#11 signer in the Docker setup. The private key exists
+only inside the token in the signer container, which has no network. Fuseki holds a handle and
+the PIN and can ask for signatures, but it can't read the key. In production, the signer's
+module is an HSM's PKCS\#11 library instead of SoftHSM2.}
+\label{fig:separation}
+\end{figure}
+
+The endpoint \code{GET /\$/provenance/key} publishes the public key in four forms, with its
+key type, cryptosuite, and signer, as Example~\ref{lst:key} shows.
+
+\needspace{14\baselineskip}
+\begin{lstlisting}[caption={The public key as returned by \code{GET /\$/provenance/key} in the demo (PEM shortened).}, label={lst:key}]
 {
-  "id": "did:key:z6MkmWjXFhHNjDJZDh3dJUmC7YSUJK3LZMXNRz4ZUmxDWKuw",
-  "verificationMethod": "did:key:z6MkmW...WKuw#z6MkmW...WKuw",
+  "id": "did:key:zDnaexiU9JaqEPUYG1ipD22upCZMAQAhXRtQrBsdGRAUue8Eq",
+  "verificationMethod": "did:key:zDnaex...e8Eq#zDnaex...e8Eq",
   "type": "Multikey",
-  "publicKeyMultibase": "z6MkmWjXFhHNjDJZDh3dJUmC7YSUJK3LZMXNRz4ZUmxDWKuw",
-  "publicKeyJwk": { "kty": "OKP", "crv": "Ed25519",
-                    "x": "aOWeg4aZ115R9Vl559XfjwxGRTlXBpCfZ738anS6Ya4" },
-  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAaOWeg4aZ..."
+  "publicKeyMultibase": "zDnaexiU9JaqEPUYG1ipD22upCZMAQAhXRtQrBsdGRAUue8Eq",
+  "publicKeyJwk": { "kty": "EC", "crv": "P-256",
+                    "x": "37As8fzZpkZ9Q5voW7ZYb_UKn_45_ewZT37K_z2GCUY",
+                    "y": "w3LjH4t-AiBQZGhtM3il2fHjlIPLjP8n8yHvCNwV4zM" },
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZI...",
+  "keyType": "P-256",
+  "cryptosuite": "ecdsa-rdfc-2019",
+  "signer": "pkcs11"
 }
 \end{lstlisting}
 
@@ -1019,7 +1132,7 @@ verification works in five steps:
 
 \begin{enumerate}
 \item Check the proof against the key in the \code{did:key}, over the certificate without its
-  timestamps. With \code{-{}-expect-key}, also check that the key is the expected one.
+  timestamps, with the cryptosuite that fits the key type. With \code{-{}-expect-key}, also check that the key is the expected one.
 \item Check each timestamp: the token's imprint must be the hash of the proof's signature, the
   TSA's signature must verify with the certificate in the token, and that certificate must be
   a time-stamping certificate valid at \code{genTime}. Then chain the TSA certificate, at
@@ -1044,19 +1157,19 @@ results with one email address changed.
 
 \needspace{18\baselineskip}
 \begin{lstlisting}[basicstyle=\ttfamily\footnotesize, caption={Verifier output for the demo results and for a tampered copy (key IRIs shortened, TSA line wrapped).}, label={lst:verify}]
-$ verify -r results.srj -c certificate.ttl -k did:key:z6MkmW...WKuw
-Certificate     : urn:uuid:e0963ba2-6bc0-4264-9ed2-25b02f9e5a8a
-Signed by       : did:key:z6MkmW...WKuw#z6MkmW...WKuw
+$ verify -r results.srj -c certificate.ttl -k did:key:zDnaex...e8Eq
+Certificate     : urn:uuid:308afd1b-62ed-4377-98ee-8cb9335561cf
+Signed by       : did:key:zDnaex...e8Eq#zDnaex...e8Eq
 Signature       : OK
-Timestamp       : OK  2026-11-19T14:17:21Z  (trusted)
+Timestamp       : OK  2026-11-19T15:12:19Z  (trusted)
   TSA           : C=US,O=DigiCert\, Inc.,CN=DigiCert SHA256 RSA4096 Timestamp
                   Responder 2026 1  via http://timestamp.digicert.com
-Dataset state   : urn:uuid:b3e69821-de0f-460d-b6d3-402bc1a38c8b#v1  (version 1)
+Dataset state   : urn:uuid:5f795155-cd0e-4a1a-ab18-45054b899feb#v1  (version 1)
 Solutions       : 3 certified, 3 row(s) carry this certificate
 Result digest   : OK
 VERIFIED
 
-$ verify -r results-tampered.srj -c certificate.ttl -k did:key:z6MkmW...WKuw
+$ verify -r results-tampered.srj -c certificate.ttl -k did:key:zDnaex...e8Eq
 ...
 Result digest   : MISMATCH
 Problem         : Result digest mismatch: certificate feb2d70a...f06efebe, rows b1c94dd9...92ecdc56
@@ -1098,7 +1211,8 @@ Fuseki configuration.
     tdb2:location "/fuseki/databases/provenance" .
 \end{lstlisting}
 
-The timestamp settings of Section~\ref{sec:timestamps} go into the same server context. The
+The signer is configured through the environment (Section~\ref{sec:keys}), and the timestamp
+settings of Section~\ref{sec:timestamps} go into the same server context as the store. The
 demo's \file{docker-compose.yml} sets them through the environment instead, with DigiCert,
 Sectigo, and FreeTSA as the priority list, so the list can change without editing the
 configuration file.
@@ -1139,7 +1253,10 @@ builds both jars in the \longcode{maven:3.9-eclipse-temurin-21} image and runs t
 21. The second stage starts from \longcode{eclipse-temurin:21-jre} and downloads
 \file{jena-fuseki-server-6.2.0.jar} from Maven Central, checked against a pinned SHA-256
 hash. The server runs as an unprivileged user, with one volume for \file{/fuseki} and port
-3030. The image's entry point also runs the verifier, so a client can check certificates with
+3030. The runtime image adds \code{p11-kit-client.so} and points the PKCS\#11 signer at the
+signer's socket. A second image, the signer, holds SoftHSM2 and \code{p11-kit server}; Docker
+Compose starts it first, without network, and shares its socket volume with Fuseki. The build
+stage installs SoftHSM2 too, so the PKCS\#11 tests run against a real token. The image's entry point also runs the verifier, so a client can check certificates with
 the same image without installing Java.
 
 % ====================================================================================
@@ -1149,8 +1266,9 @@ the same image without installing Java.
 \subsection{Test Suite}
 \label{sec:tests}
 
-The build runs 137 tests, listed in Table~\ref{tab:tests}. They pass on OpenJDK 25 on the
-development machine and on Java 21 during the Docker build.
+The build runs 162 tests, listed in Table~\ref{tab:tests}. They pass on Java 21 during the
+Docker build. On the development machine (OpenJDK 25) the four PKCS\#11 tests are skipped,
+because they need SoftHSM2, and the others pass.
 
 \begin{table}[ht]
 \centering
@@ -1168,9 +1286,16 @@ the functions, restart with stable identity, compaction, journal replay before o
 duplicates, blank nodes, empty results, rejection of RDF 1.2 terms. \\
 \code{DataIntegrityProofTest} & 8 & The \code{eddsa-rdfc-2022} test vectors, tampering,
 \code{did:key} encoding, base58 encoding. \\
+\code{EcdsaDataIntegrityProofTest} & 14 & The \code{ecdsa-rdfc-2019} test vectors for P-256
+and P-384: \code{did:key}s, hashes, canonical proof configuration, hash data, the vector
+signature, signing with the vector key, and a cryptosuite that doesn't fit the key. \\
 \code{SigningKeyTest} & 7 & The signing key against the test vectors, PEM round trip and
 persistence, keys written by OpenSSL and the JDK, rejection of other key types and mismatched
 public keys. \\
+\code{ProvenanceKeysTest} & 7 & Choosing the signer, error messages for a missing module or key
+setting, PIN files, and the \code{did:key}, JWK, and PEM forms of P-256 and P-384 keys. \\
+\code{Pkcs11SignerTest} & 4 & On a SoftHSM2 token: P-256 and P-384 keys created on the token,
+signing, finding an existing key, a missing key, a whole certificate. \\
 \code{CertificateTimestampsTest} & 6 & Timestamps against a test TSA: the proof stays valid,
 trust anchors, a token for another signature, a corrupted token, TSA certificate validity at
 \code{genTime}, reply and request matching. \\
@@ -1189,7 +1314,7 @@ and no others (Appendix~\ref{app:vocab}). \\
 \code{VerifyTest} & 9 & Exit status of the verifier command for good, bad, and missing
 arguments, including the timestamp options. \\
 \midrule
-Total & 137 & \\
+Total & 162 & \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1205,14 +1330,18 @@ for it.
 
 For the signature, the module reproduces the test vectors of the Data Integrity EdDSA
 specification~\cite{eddsa}: the key identifiers, the two SHA-256 hashes, the canonical proof
-configuration, and the proof value, each byte for byte.
+configuration, and the proof value, each byte for byte. For the ECDSA
+specification~\cite{ecdsa}, it matches the P-256 and P-384 vectors for the \code{did:key}s, the
+hashes, the canonical proof configuration, and the hash data. ECDSA signatures are randomized,
+so the vector's signature is verified rather than reproduced, and signing is checked by signing
+with the vector's key and verifying the result.
 
 \subsection{End-to-End Demo}
 \label{sec:demo}
 
 The script \file{scripts/demo.sh} runs against the Docker image. Table~\ref{tab:demo} shows a
-run that started with an empty volume, with the default TSA list: DigiCert, Sectigo, and
-FreeTSA.
+run that started with empty volumes, with the PKCS\#11 signer in its own container and the
+default TSA list: DigiCert, Sectigo, and FreeTSA.
 
 \begin{table}[ht]
 \centering
@@ -1223,28 +1352,35 @@ FreeTSA.
 \toprule
 & Step & Observation \\
 \midrule
-1 & Load three people through the Graph Store Protocol & Response header
+1 & Start the signer and Fuseki & The module creates a P-256 key on the signer's token;
+\code{/\$/provenance/key} reports \code{pkcs11}, \code{ecdsa-rdfc-2019}, and
+\code{did:key:zDnaex...e8Eq} (Example~\ref{lst:key}). \\
+2 & Load three people through the Graph Store Protocol & Response header
 \code{X-Dataset-Version: 1}. \\
-2 & Run the certified query (Example~\ref{lst:query}) & Three rows with one certificate;
+3 & Run the certified query (Example~\ref{lst:query}) & Three rows with one certificate;
 \code{X-Dataset-Version: 1}. \\
-3 & Fetch the certificate right after the query & \code{202 Accepted},
+4 & Fetch the certificate right after the query & \code{202 Accepted},
 \code{Retry-After: 1}, status \code{timestamp-pending} (Example~\ref{lst:pending}); about a
 second later 200 with the timestamped certificate. \\
-4 & Verify in a separate container & \code{VERIFIED}, exit status 0. Timestamp from
+5 & Verify in a separate container & \code{VERIFIED}, exit status 0; the P-256 signature
+from the token checks out. Timestamp from
 DigiCert, trusted through the JVM trust store, in the same second as the proof's creation
 time. \\
-5 & Change one email address and verify & Digest mismatch, exit status 1. \\
-6 & Insert a fourth person, query again & Update header 2; new certificate for 4 solutions
+6 & Change one email address and verify & Digest mismatch, exit status 1. \\
+7 & Insert a fourth person, query again & Update header 2; new certificate for 4 solutions
 at version 2, verified. \\
-7 & Certify a pattern with no match & One row with only \code{?cert}; certificate with 0
+8 & Certify a pattern with no match & One row with only \code{?cert}; certificate with 0
 solutions, verified. \\
-8 & Compare the counters & Persistent 2, internal 2. \\
-9 & Restart the container & Persistent 2, internal 0. \\
-10 & Insert one more person & Persistent 3, internal 1. \\
-11 & Query the certificate store & Three certificates, at versions 1, 2, and 2, each
+9 & Compare the counters & Persistent 2, internal 2. \\
+10 & Restart the container & Persistent 2, internal 0. \\
+11 & Insert one more person & Persistent 3, internal 1. \\
+12 & Query the certificate store & Three certificates, at versions 1, 2, and 2, each
 timestamped by DigiCert. \\
-12 & Put an unreachable TSA first in the list, query again & The server logs the failed TSA
+13 & Put an unreachable TSA first in the list, query again & The server logs the failed TSA
 and falls back to DigiCert; the new certificate at version 3 verifies. \\
+14 & Restart the signer container, query again & The first signature fails, the module
+reconnects with a fresh copy of \code{p11-kit-client.so}, and the new certificate, signed with
+the same key, verifies. \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1292,7 +1428,9 @@ memory up to the cap, and the certificate store adds one write transaction per c
 A valid certificate, checked against a trusted key, shows that the holder of that key stated
 that these rows were the solutions of this pattern against a given database state at a given
 time. It doesn't show that the server evaluated the query correctly or that the data is true.
-A compromised server can sign anything. The times inside the certificate come from the
+A compromised server can sign anything while it is compromised. With the PKCS\#11 signer it
+can't take the key away, though: the key stays on the token, so access ends when the server is
+cleaned up, and an HSM can log or limit what is signed. The times inside the certificate come from the
 server's clock. With a timestamp from a TSA the verifier trusts, the certificate is also known
 to have existed no later than the token's \code{genTime}, independently of that clock; the
 token says nothing about the times the server wrote. Without a trusted key, a valid
@@ -1326,6 +1464,9 @@ whose name includes the database ID and version.
   request rates. The requests run one at a time in the background, so a burst of certificates
   queues up and stays pending for longer. Real use needs an own or contracted TSA. TSA certificates
   are not checked for revocation, and a timestamp is only as trustworthy as the TSA's key.
+\item The PKCS\#11 PIN is in the Fuseki process. The key can't be read, but whoever controls
+  that process can have the token sign. SoftHSM2 stores its keys in files and only stands in
+  for an HSM, and p11-kit's client/server forwarding is Linux-only.
 \item Refused certifications reach the client as HTTP 500 instead of a 4xx status.
 \item In embedded use with Jena 6.2.0, queries over TDB2 have to run inside a transaction,
   because lazily evaluated patterns fail outside one. This happens without the module too,
@@ -1352,7 +1493,10 @@ streaming, for example a hash tree over chunks of rows, instead of holding all s
 memory. Timestamps could be batched, with one token over a hash tree of many certificates, to
 reduce the number of TSA requests, and revocation data for TSA certificates could be collected
 when the token is issued, so that a timestamp stays verifiable after the TSA certificate
-expires.
+expires. Ed25519 keys could move to PKCS\#11 once SunPKCS11 supports EdDSA, or through Java's
+foreign function interface. Further signer providers could reach a cloud key service, and a
+signer that checks what it is asked to sign, for example by rate or by key usage, would limit
+what a compromised server can do with the key.
 
 % ====================================================================================
 \section{Conclusion}
@@ -1364,7 +1508,8 @@ that writes its own REDO record makes the version persistent and atomic with the
 as the dataset is declared as \code{jip:VersionedDatasetTDB2} so that the version can be
 recovered before TDB2 opens the database. A \code{SERVICE} with a reserved IRI can certify the
 solutions of any pattern: the solutions are encoded as RDF, canonicalized with RDFC-1.0,
-hashed, and recorded in a PROV-O certificate signed with \code{eddsa-rdfc-2022}. The
+hashed, and recorded in a PROV-O certificate signed with \code{ecdsa-rdfc-2019} by a key that
+stays on a PKCS\#11 token in a separate process, or with \code{eddsa-rdfc-2022} and a local key. The
 certificate can be checked offline, the cryptography matches the W3C test vectors, and
 10,000 solutions take about a second to digest. An optional RFC~3161 timestamp over the
 signature adds evidence of when a certificate existed that doesn't depend on the server, and
@@ -1388,7 +1533,7 @@ Maven with Java 21 or later for the local build.
 \begin{lstlisting}[language=bash, caption={Commands to build, test, and run the demo.}, label={lst:reproduce}]
 docker compose up -d --build    # build the module, run the tests on Java 21, start Fuseki
 scripts/demo.sh --reset         # end-to-end demo; --reset deletes the demo volume
-mvn test                        # the 137 tests on the local JDK
+mvn test                        # the 162 tests (PKCS#11 tests need SoftHSM2)
 scripts/build-whitepaper.sh     # this report
 \end{lstlisting}
 
