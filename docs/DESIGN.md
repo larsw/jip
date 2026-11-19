@@ -310,7 +310,7 @@ counter persisted.
 
 ## 5. Packaging
 
-- **Build:** a Maven parent with three modules, all `xyz.larsw:*:0.13.0-SNAPSHOT`, all in
+- **Build:** a Maven parent with three modules, all `xyz.larsw:*:0.13.0`, all in
   the package `xyz.larsw.jip`:
   - `jip-verifier`: canonicalization, the `rs:` encoding, Data Integrity proofs
     (`DataIntegrityProof`, signing through the `ProofSigner` interface), `did:key`

@@ -27,7 +27,8 @@ SHA-256 digest of the solutions, and carries a W3C Data Integrity proof (ecdsa-r
 from the https://w3id.org/security# vocabulary."""@en ;
     dcterms:creator "Lars Wilhelmsen" ;
     dcterms:created "2026-11-15"^^xsd:date ;
-    owl:versionInfo "0.1.0" ;
+    dcterms:modified "2026-11-19"^^xsd:date ;
+    owl:versionInfo "0.13.0" ;
     vann:preferredNamespacePrefix "jip" ;
     vann:preferredNamespaceUri "https://larsw.xyz/jip/" ;
     rdfs:seeAlso <https://www.w3.org/TR/prov-o/> ,

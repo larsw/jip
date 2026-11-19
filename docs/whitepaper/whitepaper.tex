@@ -836,25 +836,25 @@ optional timestamp covers the proof's signature value.}
 
 \needspace{10\baselineskip}
 \begin{lstlisting}[language=Turtle, caption={An attestation from the demo, with prefixes added and long literals shortened.}, label={lst:attestation}]
-PREFIX c:   <urn:uuid:308afd1b-62ed-4377-98ee-8cb9335561cf#>
-PREFIX db:  <urn:uuid:5f795155-cd0e-4a1a-ab18-45054b899feb#>
-PREFIX key: <did:key:zDnaexiU9JaqEPUYG1ipD22upCZMAQAhXRtQrBsdGRAUue8Eq#>
+PREFIX c:   <urn:uuid:4c28726e-34c3-4e21-afc6-071e326952c5#>
+PREFIX db:  <urn:uuid:bc2ff52d-8b91-4a09-8d1a-5fad4b0ef1f6#>
+PREFIX key: <did:key:zDnaef8aTVdxK9BwVda4B8sB44dApsDei3MQuxQHFRJMUYTdS#>
 
-<urn:uuid:308afd1b-62ed-4377-98ee-8cb9335561cf>
+<urn:uuid:4c28726e-34c3-4e21-afc6-071e326952c5>
     a jip:ResultAttestation, prov:Entity ;
     jip:attests c:result ;
     sec:proof [
         a sec:DataIntegrityProof ;
         sec:cryptosuite "ecdsa-rdfc-2019"^^sec:cryptosuiteString ;
-        sec:verificationMethod key:zDnaexiU9JaqEPUYG1ipD22upCZMAQAhXRtQrBsdGRAUue8Eq ;
+        sec:verificationMethod key:zDnaef8aTVdxK9BwVda4B8sB44dApsDei3MQuxQHFRJMUYTdS ;
         sec:proofPurpose sec:assertionMethod ;
-        dcterms:created "2026-11-19T15:12:19Z"^^xsd:dateTime ;
-        sec:proofValue "z2dmtc8nBTbv...eUcvvfNo"^^sec:multibase ] ;
+        dcterms:created "2026-11-19T15:48:14Z"^^xsd:dateTime ;
+        sec:proofValue "z5JmVw16ggx2...4q5DFGJ6"^^sec:multibase ] ;
     jip:timestamp [
         a jip:RFC3161Timestamp ;
-        jip:timestampToken "MIIXawYJKoZIhvcNAQcCoIIXXDCC..."^^xsd:base64Binary ;
+        jip:timestampToken "MIIXagYJKoZIhvcNAQcCoIIXWzCC..."^^xsd:base64Binary ;
         jip:timestampAuthority <http://timestamp.digicert.com> ;
-        jip:timestampTime "2026-11-19T15:12:19Z"^^xsd:dateTime ] .
+        jip:timestampTime "2026-11-19T15:48:14Z"^^xsd:dateTime ] .
 
 c:result a jip:SolutionSequence, prov:Entity ;
     prov:wasGeneratedBy c:exec ;
@@ -868,9 +868,9 @@ c:result a jip:SolutionSequence, prov:Entity ;
 
 c:exec a jip:QueryExecution, prov:Activity ;
     prov:used db:v1 ;
-    prov:wasAssociatedWith <did:key:zDnaexiU9JaqEPUYG1ipD22upCZMAQAhXRtQrBsdGRAUue8Eq> ;
-    prov:startedAtTime "2026-11-19T15:12:19.628138290Z"^^xsd:dateTime ;
-    prov:endedAtTime   "2026-11-19T15:12:19.651054103Z"^^xsd:dateTime ;
+    prov:wasAssociatedWith <did:key:zDnaef8aTVdxK9BwVda4B8sB44dApsDei3MQuxQHFRJMUYTdS> ;
+    prov:startedAtTime "2026-11-19T15:48:14.441260126Z"^^xsd:dateTime ;
+    prov:endedAtTime   "2026-11-19T15:48:14.458049865Z"^^xsd:dateTime ;
     jip:servicePattern "SELECT ?name ?email WHERE { ... } ORDER BY ?name" ;
     jip:queryText "PREFIX jip: <https://larsw.xyz/jip/> ..." .
 
@@ -878,9 +878,9 @@ db:v1 a jip:DatasetState, prov:Entity ;
     jip:dataVersion 1 ;
     prov:specializationOf <https://example.org/datasets/ds> .
 
-<did:key:zDnaexiU9JaqEPUYG1ipD22upCZMAQAhXRtQrBsdGRAUue8Eq>
+<did:key:zDnaef8aTVdxK9BwVda4B8sB44dApsDei3MQuxQHFRJMUYTdS>
     a prov:SoftwareAgent ;
-    rdfs:label "jena-intrinsic-provenance 0.12.0 on Apache Jena 6.2.0" .
+    rdfs:label "jena-intrinsic-provenance 0.13.0 on Apache Jena 6.2.0" .
 \end{lstlisting}
 
 The attestation holds the digest of the rows and never the rows themselves, so its size
@@ -937,9 +937,9 @@ The token is added after signing, as a node of its own:
 \begin{lstlisting}[language=Turtle, numbers=none]
 <C> jip:timestamp _:t .
 _:t a jip:RFC3161Timestamp ;
-    jip:timestampToken "MIIXawYJKoZIhvcNAQcCoIIXXDCC..."^^xsd:base64Binary ;
+    jip:timestampToken "MIIXagYJKoZIhvcNAQcCoIIXWzCC..."^^xsd:base64Binary ;
     jip:timestampAuthority <http://timestamp.digicert.com> ;
-    jip:timestampTime "2026-11-19T15:12:19Z"^^xsd:dateTime .
+    jip:timestampTime "2026-11-19T15:48:14Z"^^xsd:dateTime .
 \end{lstlisting}
 Only the token is evidence. The authority and the time are copies for queries over the
 attestation store; the verifier reports what the token says. The timestamp triples are not part
@@ -978,8 +978,8 @@ HTTP/1.1 202 Accepted
 Retry-After: 1
 Content-Type: application/json
 
-{"attestation":"urn:uuid:308afd1b-62ed-4377-98ee-8cb9335561cf","status":"timestamp-pending",
- "pendingSince":"2026-11-19T15:12:19.657253589Z","retryAfter":1}
+{"attestation":"urn:uuid:4c28726e-34c3-4e21-afc6-071e326952c5","status":"timestamp-pending",
+ "pendingSince":"2026-11-19T15:48:14.462409701Z","retryAfter":1}
 \end{lstlisting}
 
 The policy (\code{jip:timestampPolicy}) decides what happens when no TSA answers. With
@@ -1093,13 +1093,13 @@ key type, cryptosuite, and signer, as Example~\ref{lst:key} shows.
 \needspace{14\baselineskip}
 \begin{lstlisting}[caption={The public key as returned by \code{GET /\$/provenance/key} in the demo (PEM shortened).}, label={lst:key}]
 {
-  "id": "did:key:zDnaexiU9JaqEPUYG1ipD22upCZMAQAhXRtQrBsdGRAUue8Eq",
-  "verificationMethod": "did:key:zDnaex...e8Eq#zDnaex...e8Eq",
+  "id": "did:key:zDnaef8aTVdxK9BwVda4B8sB44dApsDei3MQuxQHFRJMUYTdS",
+  "verificationMethod": "did:key:zDnaef...YTdS#zDnaef...YTdS",
   "type": "Multikey",
-  "publicKeyMultibase": "zDnaexiU9JaqEPUYG1ipD22upCZMAQAhXRtQrBsdGRAUue8Eq",
+  "publicKeyMultibase": "zDnaef8aTVdxK9BwVda4B8sB44dApsDei3MQuxQHFRJMUYTdS",
   "publicKeyJwk": { "kty": "EC", "crv": "P-256",
-                    "x": "37As8fzZpkZ9Q5voW7ZYb_UKn_45_ewZT37K_z2GCUY",
-                    "y": "w3LjH4t-AiBQZGhtM3il2fHjlIPLjP8n8yHvCNwV4zM" },
+                    "x": "2mrjn7lHG8EcnzZ3EFBdIIdEou2g1nt-jtLX5yOwAjE",
+                    "y": "KjM6iQdfmWmxJWnIXu-Bktg7hmzQJyYMp8rwJdm2faA" },
   "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZI...",
   "keyType": "P-256",
   "cryptosuite": "ecdsa-rdfc-2019",
@@ -1160,19 +1160,19 @@ results with one email address changed.
 
 \needspace{18\baselineskip}
 \begin{lstlisting}[basicstyle=\ttfamily\footnotesize, caption={Verifier output for the demo results and for a tampered copy (key IRIs shortened, TSA line wrapped).}, label={lst:verify}]
-$ verify -r results.srj -a attestation.ttl -k did:key:zDnaex...e8Eq
-Attestation     : urn:uuid:308afd1b-62ed-4377-98ee-8cb9335561cf
-Signed by       : did:key:zDnaex...e8Eq#zDnaex...e8Eq
+$ verify -r results.srj -a attestation.ttl -k did:key:zDnaef...YTdS
+Attestation     : urn:uuid:4c28726e-34c3-4e21-afc6-071e326952c5
+Signed by       : did:key:zDnaef...YTdS#zDnaef...YTdS
 Signature       : OK
-Timestamp       : OK  2026-11-19T15:12:19Z  (trusted)
+Timestamp       : OK  2026-11-19T15:48:14Z  (trusted)
   TSA           : C=US,O=DigiCert\, Inc.,CN=DigiCert SHA256 RSA4096 Timestamp
                   Responder 2026 1  via http://timestamp.digicert.com
-Dataset state   : urn:uuid:5f795155-cd0e-4a1a-ab18-45054b899feb#v1  (version 1)
+Dataset state   : urn:uuid:bc2ff52d-8b91-4a09-8d1a-5fad4b0ef1f6#v1  (version 1)
 Solutions       : 3 attested, 3 row(s) carry this attestation
 Result digest   : OK
 VERIFIED
 
-$ verify -r results-tampered.srj -a attestation.ttl -k did:key:zDnaex...e8Eq
+$ verify -r results-tampered.srj -a attestation.ttl -k did:key:zDnaef...YTdS
 ...
 Result digest   : MISMATCH
 Problem         : Result digest mismatch: attestation feb2d70a...f06efebe, rows b1c94dd9...92ecdc56
@@ -1357,7 +1357,7 @@ default TSA list: DigiCert, Sectigo, and FreeTSA.
 \midrule
 1 & Start the signer and Fuseki & The module creates a P-256 key on the signer's token;
 \code{/\$/provenance/key} reports \code{pkcs11}, \code{ecdsa-rdfc-2019}, and
-\code{did:key:zDnaex...e8Eq} (Example~\ref{lst:key}). \\
+\code{did:key:zDnaef...YTdS} (Example~\ref{lst:key}). \\
 2 & Load three people through the Graph Store Protocol & Response header
 \code{X-Dataset-Version: 1}. \\
 3 & Run the attested query (Example~\ref{lst:query}) & Three rows with one attestation;
