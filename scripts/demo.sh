@@ -63,9 +63,19 @@ verify() {
   return "${PIPESTATUS[0]}"
 }
 
-# certificate <cert-iri> <file>
+# certificate <cert-iri> <file>: fetch it; while its RFC 3161 timestamp is still being fetched
+# the server answers 202 Accepted with Retry-After, so wait and ask again.
 certificate() {
-  curl -fsS -H 'Accept: text/turtle' "$BASE/\$/provenance/certificate/${1#urn:uuid:}" -o "$OUT/$2"
+  local url="$BASE/\$/provenance/certificate/${1#urn:uuid:}" code
+  for _ in $(seq 1 60); do
+    code=$(curl -sS -H 'Accept: text/turtle' -D "$OUT/certificate.headers" -o "$OUT/$2" -w '%{http_code}' "$url")
+    case "$code" in
+      200) return 0 ;;
+      202) sleep "$(header Retry-After "$OUT/certificate.headers")" ;;
+      *) echo "certificate $1: HTTP $code" >&2; return 1 ;;
+    esac
+  done
+  echo "certificate $1: timestamp still pending after 60 tries" >&2; return 1
 }
 
 # show <file>: print a certificate, eliding the long base64 timestamp token
@@ -119,6 +129,18 @@ info "X-Dataset-Version: $(header X-Dataset-Version "$OUT/query.headers")"
 CERT=$(jq -r '.results.bindings[0].cert.value' "$OUT/results.srj")
 
 bold "3. The certificate ($CERT)"
+if [[ -n "$TSA_URLS" ]]; then
+  # Timestamps are fetched in the background; right after the query the certificate is
+  # usually still waiting for its token.
+  code=$(curl -sS -D "$OUT/pending.headers" -o "$OUT/pending.json" -w '%{http_code}' \
+              "$BASE/\$/provenance/certificate/${CERT#urn:uuid:}")
+  if [[ "$code" == 202 ]]; then
+    info "right after the query: HTTP 202, Retry-After: $(header Retry-After "$OUT/pending.headers")"
+    info "$(jq -c . "$OUT/pending.json")"
+  else
+    info "right after the query: HTTP $code (the timestamp had already landed)"
+  fi
+fi
 certificate "$CERT" certificate.ttl
 show "$OUT/certificate.ttl"
 

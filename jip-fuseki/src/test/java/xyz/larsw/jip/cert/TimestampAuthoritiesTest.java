@@ -73,7 +73,7 @@ class TimestampAuthoritiesTest {
 
     @Test
     void firstAuthorityThatAnswersWins() {
-        TimestampAuthorities tsa = TimestampAuthorities.of(List.of(deadUrl, brokenUrl, goodUrl), TimestampAuthorities.Policy.OPTIONAL, TIMEOUT);
+        TimestampAuthorities tsa = TimestampAuthorities.of(List.of(deadUrl, brokenUrl, goodUrl), TimestampAuthorities.Policy.OPTIONAL, TimestampAuthorities.Mode.SYNC, TIMEOUT, TimestampAuthorities.DEFAULT_MAX_WAIT);
         Optional<TimestampAuthorities.Stamp> stamp = tsa.stamp(IMPRINT);
         assertTrue(stamp.isPresent());
         assertEquals(goodUrl, stamp.get().authority());
@@ -84,7 +84,8 @@ class TimestampAuthoritiesTest {
     @Test
     void failedAuthoritiesAreTriedLastDuringTheCooldown() {
         MovableClock clock = new MovableClock();
-        TimestampAuthorities tsa = TimestampAuthorities.of(List.of(brokenUrl, goodUrl), TimestampAuthorities.Policy.OPTIONAL, TIMEOUT, clock);
+        TimestampAuthorities tsa = TimestampAuthorities.of(List.of(brokenUrl, goodUrl), TimestampAuthorities.Policy.OPTIONAL, TimestampAuthorities.Mode.SYNC, TIMEOUT,
+                TimestampAuthorities.DEFAULT_MAX_WAIT, List.of(Duration.ofSeconds(5)), clock);
         assertEquals(List.of(brokenUrl, goodUrl), tsa.order());
         assertTrue(tsa.stamp(IMPRINT).isPresent());
         assertEquals(List.of(goodUrl, brokenUrl), tsa.order(), "broken authority demoted");
@@ -95,7 +96,7 @@ class TimestampAuthoritiesTest {
 
     @Test
     void allFailingGivesNoStamp() {
-        TimestampAuthorities tsa = TimestampAuthorities.of(List.of(deadUrl, brokenUrl), TimestampAuthorities.Policy.REQUIRED, TIMEOUT);
+        TimestampAuthorities tsa = TimestampAuthorities.of(List.of(deadUrl, brokenUrl), TimestampAuthorities.Policy.REQUIRED, TimestampAuthorities.Mode.SYNC, TIMEOUT, TimestampAuthorities.DEFAULT_MAX_WAIT);
         assertTrue(tsa.stamp(IMPRINT).isEmpty());
     }
 

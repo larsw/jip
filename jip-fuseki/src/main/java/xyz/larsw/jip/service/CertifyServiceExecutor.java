@@ -54,8 +54,9 @@ import org.slf4j.LoggerFactory;
  * transaction (the query's own, or a new one if there is none).</li>
  * <li>Materialize the solutions (at most {@code jip:maxSolutions}, default 10,000).</li>
  * <li>Digest: SHA-256 of the RDFC-1.0 canonical {@code rs:} encoding.</li>
- * <li>Build and sign the PROV-O certificate; if TSAs are configured, attach an RFC 3161
- * timestamp over the signature; store it in the certificate store.</li>
+ * <li>Build and sign the PROV-O certificate and store it in the certificate store. If TSAs
+ * are configured, an RFC 3161 timestamp over the signature is added: in the background by
+ * default (the certificate is pending until then), or before storing in sync mode.</li>
  * <li>Return the rows (merged with the incoming binding) with the certificate variable bound.</li>
  * </ol>
  */
@@ -137,8 +138,7 @@ public class CertifyServiceExecutor implements ChainingServiceExecutor {
                 variables, ordered, eval.rows().size(), digest,
                 patternText(inner), queryText(context), started, ended);
         Graph certificate = CertificateBuilder.buildSigned(input, key, agentLabel());
-        timestamp(certificate, certNode, context);
-        CertificateStore.fromContext(context).store(certNode, certificate);
+        storeWithTimestamp(certificate, certNode, context);
         LOG.info("Certified {} solution(s) at database {} v{} -> {}", eval.rows().size(), dataVersion.databaseId(),
                  eval.version(), certNode.getURI());
 
@@ -156,27 +156,44 @@ public class CertifyServiceExecutor implements ChainingServiceExecutor {
     }
 
     /**
-     * Have a TSA co-sign the certificate's signature, if timestamp authorities are configured.
-     * With the {@code required} policy, no token means no certificate.
+     * Store the certificate, with an RFC 3161 timestamp over its signature if timestamp
+     * authorities are configured.
+     * <ul>
+     * <li>No TSA: store it as it is.</li>
+     * <li>Async (default): store it as pending and let the background worker add the timestamp;
+     * the query does not wait.</li>
+     * <li>Sync: fetch the timestamp first. With the {@code required} policy, no token means no
+     * certificate.</li>
+     * </ul>
      */
-    private static void timestamp(Graph certificate, Node certNode, Context context) {
+    private static void storeWithTimestamp(Graph certificate, Node certNode, Context context) {
+        CertificateStore store = CertificateStore.fromContext(context);
         Optional<TimestampAuthorities> tsa;
         try {
             tsa = TimestampAuthorities.fromContext(context);
         } catch (IllegalArgumentException ex) {
             throw new QueryExecException("Bad timestamp configuration: " + ex.getMessage(), ex);
         }
-        if ( tsa.isEmpty() )
+        if ( tsa.isEmpty() ) {
+            store.store(certNode, certificate);
             return;
+        }
+        if ( tsa.get().mode() == TimestampAuthorities.Mode.ASYNC ) {
+            Instant now = Instant.now();
+            store.storePending(certNode, certificate, now);
+            tsa.get().submit(store, certNode, now);
+            return;
+        }
         Optional<TimestampAuthorities.Stamp> stamp = tsa.get().stamp(CertificateTimestamps.messageImprint(certificate, certNode));
         if ( stamp.isPresent() ) {
             CertificateTimestamps.attach(certificate, certNode, stamp.get().token(), stamp.get().authority().toString());
-            return;
-        }
-        if ( tsa.get().policy() == TimestampAuthorities.Policy.REQUIRED )
+        } else if ( tsa.get().policy() == TimestampAuthorities.Policy.REQUIRED ) {
             throw new QueryExecException("No timestamp authority answered " + tsa.get().authorities()
                                          + " and a timestamp is required (" + JIP.symTimestampPolicy.getSymbol() + ")");
-        LOG.warn("Certificate {} issued without an RFC 3161 timestamp", certNode.getURI());
+        } else {
+            LOG.warn("Certificate {} issued without an RFC 3161 timestamp", certNode.getURI());
+        }
+        store.store(certNode, certificate);
     }
 
     /** Parent + the row's named visible variables + the certificate; null if incompatible. */

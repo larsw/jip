@@ -13,7 +13,11 @@ services:
       # RFC 3161 timestamp authorities, in priority order: each certificate is co-signed by the
       # first one that answers. Override with JIP_TSA_URLS; set it to "" to turn timestamps off.
       PROVENANCE_TSA_URLS: "${JIP_TSA_URLS-http://timestamp.digicert.com http://timestamp.sectigo.com https://freetsa.org/tsr}"
-      # optional: issue the certificate without a timestamp if no TSA answers; required: fail.
+      # async: queries don't wait; the certificate endpoint answers 202 + Retry-After until the
+      # timestamp has landed. sync: the query waits for the TSA.
+      PROVENANCE_TSA_MODE: "${JIP_TSA_MODE:-async}"
+      # optional: give up after PROVENANCE_TSA_MAX_WAIT (async) or at once (sync) and keep the
+      # certificate without a timestamp; required: keep retrying (async) or fail the query (sync).
       PROVENANCE_TSA_POLICY: "${JIP_TSA_POLICY:-optional}"
       # Time allowed per TSA, in milliseconds.
       PROVENANCE_TSA_TIMEOUT: "${JIP_TSA_TIMEOUT:-5000}"

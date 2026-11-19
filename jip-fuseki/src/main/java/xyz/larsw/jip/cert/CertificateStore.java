@@ -1,14 +1,20 @@
 package xyz.larsw.jip.cert;
 
+import java.time.Instant;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.apache.jena.datatypes.xsd.XSDDatatype;
 import org.apache.jena.graph.Graph;
 import org.apache.jena.graph.GraphMemFactory;
 import org.apache.jena.graph.Node;
+import org.apache.jena.graph.NodeFactory;
 import org.apache.jena.query.QueryExecException;
 import org.apache.jena.sparql.core.DatasetGraph;
+import org.apache.jena.sparql.core.Quad;
 import org.apache.jena.sparql.util.Context;
 import org.apache.jena.system.Txn;
 import org.apache.jena.tdb2.DatabaseMgr;
@@ -18,12 +24,36 @@ import xyz.larsw.jip.version.DataVersion;
 /**
  * Where signed certificates are kept: one named graph per certificate, named by the
  * certificate IRI, in a dataset separate from the certified data.
+ * <p>
+ * A certificate whose RFC 3161 timestamp is still being fetched is <em>pending</em>: it is
+ * stored, signed, and recorded in the graph {@link JIP#PENDING_TIMESTAMPS} as
+ * {@code <C> jip:timestampPendingSince "..."^^xsd:dateTime}. Storing it and marking it pending
+ * happen in one transaction, and so do adding the timestamp and clearing the mark, so a crash
+ * leaves either a pending certificate (resumed on restart) or a finished one.
  */
 public interface CertificateStore {
 
     void store(Node certificate, Graph graph);
 
     Optional<Graph> get(Node certificate);
+
+    /** Store a signed certificate and mark it as waiting for its timestamp. */
+    void storePending(Node certificate, Graph graph, Instant since);
+
+    /**
+     * Add {@code additions} (the timestamp triples; may be empty) to a pending certificate and
+     * clear its pending mark, in one transaction. Does nothing if the certificate is no longer
+     * pending, so a certificate can't get a second timestamp from a competing worker.
+     *
+     * @return whether the certificate was pending
+     */
+    boolean completePending(Node certificate, Graph additions);
+
+    /** When the certificate started waiting for its timestamp; empty if it isn't waiting. */
+    Optional<Instant> pendingSince(Node certificate);
+
+    /** All certificates waiting for a timestamp. */
+    List<Node> pending();
 
     /** A store over a transactional dataset (normally TDB2). */
     static CertificateStore over(DatasetGraph dsg) {
@@ -53,9 +83,16 @@ public interface CertificateStore {
                                      + " (ja:context) to a TDB2 location");
     }
 
+    /** Whether a certificate store is configured in the context. */
+    static boolean isConfigured(Context context) {
+        return context != null && context.get(JIP.symCertificateStore) != null;
+    }
+
     /** Implementation over a {@link DatasetGraph}. */
     final class DatasetCertificateStore implements CertificateStore {
         private static final Map<String, CertificateStore> byLocation = new ConcurrentHashMap<>();
+        private static final Node PENDING = JIP.PENDING_TIMESTAMPS.asNode();
+        private static final Node SINCE = JIP.timestampPendingSince.asNode();
         private final DatasetGraph dsg;
 
         private DatasetCertificateStore(DatasetGraph dsg) {
@@ -85,6 +122,48 @@ public interface CertificateStore {
                 dsg.getGraph(certificate).find().forEach(copy::add);
                 return copy.isEmpty() ? Optional.empty() : Optional.of(copy);
             });
+        }
+
+        @Override
+        public void storePending(Node certificate, Graph graph, Instant since) {
+            Node time = NodeFactory.createLiteralDT(DateTimeFormatter.ISO_INSTANT.format(since), XSDDatatype.XSDdateTime);
+            Txn.executeWrite(dsg, () -> {
+                dsg.removeGraph(certificate);
+                dsg.addGraph(certificate, graph);
+                dsg.deleteAny(PENDING, certificate, SINCE, Node.ANY);
+                dsg.add(PENDING, certificate, SINCE, time);
+            });
+        }
+
+        @Override
+        public boolean completePending(Node certificate, Graph additions) {
+            return Txn.calculateWrite(dsg, () -> {
+                if ( !dsg.contains(PENDING, certificate, SINCE, Node.ANY) )
+                    return false;
+                additions.find().forEach(t -> dsg.add(new Quad(certificate, t)));
+                dsg.deleteAny(PENDING, certificate, SINCE, Node.ANY);
+                return true;
+            });
+        }
+
+        @Override
+        public Optional<Instant> pendingSince(Node certificate) {
+            return Txn.calculateRead(dsg, () -> {
+                var it = dsg.find(PENDING, certificate, SINCE, Node.ANY);
+                if ( !it.hasNext() )
+                    return Optional.empty();
+                Node o = it.next().getObject();
+                try {
+                    return Optional.of(Instant.parse(o.getLiteralLexicalForm()));
+                } catch (RuntimeException ex) {
+                    return Optional.of(Instant.EPOCH);
+                }
+            });
+        }
+
+        @Override
+        public List<Node> pending() {
+            return Txn.calculateRead(dsg, () -> dsg.stream(PENDING, Node.ANY, SINCE, Node.ANY).map(Quad::getSubject).distinct().toList());
         }
     }
 }

@@ -3,6 +3,8 @@ package xyz.larsw.jip.fuseki;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -28,6 +30,7 @@ import xyz.larsw.jip.cert.CertificateBuilder;
 import xyz.larsw.jip.cert.CertificateStore;
 import xyz.larsw.jip.cert.ProvenanceKeys;
 import xyz.larsw.jip.cert.SigningKey;
+import xyz.larsw.jip.cert.TimestampAuthorities;
 import xyz.larsw.jip.version.DataVersion;
 import xyz.larsw.jip.version.DataVersionComponent;
 
@@ -35,13 +38,16 @@ import xyz.larsw.jip.version.DataVersionComponent;
  * Read-only endpoints under {@code /$/provenance/}:
  * <ul>
  * <li>{@code GET certificate/{uuid}}: a stored certificate (Turtle, JSON-LD, N-Triples, N-Quads
- * or RDF/XML by content negotiation; {@code ?format=ttl|jsonld|nt|nq} overrides).</li>
+ * or RDF/XML by content negotiation; {@code ?format=ttl|jsonld|nt|nq} overrides). While its RFC 3161
+ * timestamp is still being fetched: {@code 202 Accepted} with {@code Retry-After} and a JSON status.</li>
  * <li>{@code GET key}: the signing key as did:key, publicKeyMultibase, JWK and PEM.</li>
  * <li>{@code GET version/{dataset}}: the persistent and TDB2-internal data versions.</li>
  * </ul>
  */
 public class ProvenanceServlet extends HttpServlet {
     private static final long serialVersionUID = 1L;
+    /** Retry-After when the next timestamp attempt isn't known in this process. */
+    static final long DEFAULT_RETRY_AFTER_SECONDS = 5;
 
     private static final AcceptList OFFER = AcceptList.create(
             "text/turtle", "application/ld+json", "application/n-triples", "application/n-quads", "application/rdf+xml");
@@ -68,7 +74,13 @@ public class ProvenanceServlet extends HttpServlet {
             id = id.substring("urn:uuid:".length());
         UUID uuid = UUID.fromString(id);
         Node cert = CertificateBuilder.certificateNode(uuid);
-        Optional<Graph> graph = CertificateStore.fromContext(ARQ.getContext()).get(cert);
+        CertificateStore store = CertificateStore.fromContext(ARQ.getContext());
+        Optional<Instant> pendingSince = store.pendingSince(cert);
+        if ( pendingSince.isPresent() ) {
+            timestampPending(cert, pendingSince.get(), resp);
+            return;
+        }
+        Optional<Graph> graph = store.get(cert);
         if ( graph.isEmpty() ) {
             resp.sendError(HttpServletResponse.SC_NOT_FOUND, "No certificate " + cert.getURI());
             return;
@@ -86,6 +98,27 @@ public class ProvenanceServlet extends HttpServlet {
             else
                 RDFDataMgr.write(out, graph.get(), lang);
         }
+    }
+
+    /**
+     * The certificate exists and is signed, but its RFC 3161 timestamp has not landed yet:
+     * {@code 202 Accepted} with {@code Retry-After} (seconds until the next attempt, at least 1).
+     */
+    private static void timestampPending(Node cert, Instant since, HttpServletResponse resp) throws IOException {
+        long retryAfter = DEFAULT_RETRY_AFTER_SECONDS;
+        try {
+            Optional<Duration> next = TimestampAuthorities.fromContext(ARQ.getContext()).flatMap(t -> t.untilNextAttempt(cert));
+            if ( next.isPresent() )
+                retryAfter = Math.max(1, (next.get().toMillis() + 999) / 1000);
+        } catch (IllegalArgumentException ignored) {}
+        JsonObject obj = new JsonObject();
+        obj.put("certificate", cert.getURI());
+        obj.put("status", "timestamp-pending");
+        obj.put("pendingSince", since.toString());
+        obj.put("retryAfter", retryAfter);
+        resp.setHeader("Retry-After", Long.toString(retryAfter));
+        resp.setHeader("Cache-Control", "no-store");
+        json(resp, HttpServletResponse.SC_ACCEPTED, obj);
     }
 
     private static Lang chooseLang(HttpServletRequest req) {
@@ -148,8 +181,12 @@ public class ProvenanceServlet extends HttpServlet {
     }
 
     private static void json(HttpServletResponse resp, JsonObject obj) throws IOException {
+        json(resp, HttpServletResponse.SC_OK, obj);
+    }
+
+    private static void json(HttpServletResponse resp, int status, JsonObject obj) throws IOException {
         byte[] bytes = (obj.toString() + "\n").getBytes(StandardCharsets.UTF_8);
-        resp.setStatus(HttpServletResponse.SC_OK);
+        resp.setStatus(status);
         resp.setContentType("application/json");
         resp.setCharacterEncoding("UTF-8");
         resp.setContentLength(bytes.length);

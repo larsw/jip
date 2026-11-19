@@ -198,11 +198,36 @@ is out of scope" risk.
   token wins. A TSA that fails is moved to the end of the list for 60 s, so a TSA that is down
   costs one timeout per minute rather than one per certificate. It is still tried if all the
   others fail too.
-- **Policy.** `jip:timestampPolicy` `optional` (default) issues the certificate without a
-  timestamp if no TSA answers, and logs a warning. `required` fails the certification
-  (HTTP 500, or the incoming row with `SERVICE SILENT`).
+- **Asynchronous by default.** With `jip:timestampMode async` (the default) the certify
+  SERVICE stores the signed certificate and returns; the query never waits for a TSA. In the
+  same write transaction the certificate is recorded as pending, as
+  `<C> jip:timestampPendingSince "…"` in the store's graph `jip:pendingTimestamps`. One
+  background thread per configuration (public TSAs rate-limit) fetches tokens in order. On
+  success it adds the timestamp triples to the certificate graph and removes the pending triple,
+  again in one transaction, and only if the certificate is still pending, so a certificate
+  never gets two tokens. On failure it retries after 5 s, 15 s, 30 s, 1 min, 2 min, 5 min and
+  then every 10 min. At server start (`serverAfterStarting`) the pending certificates of an
+  earlier run are queued again; if timestamps have been turned off or switched to sync, they
+  are released without a timestamp.
+- **"Try later".** `GET /$/provenance/certificate/{uuid}` answers a pending certificate with
+  `202 Accepted`, `Retry-After` (whole seconds until the next attempt, at least 1; 5 if this
+  process isn't retrying it) and `Cache-Control: no-store`, with a JSON body naming the
+  certificate, `"status": "timestamp-pending"`, `pendingSince` and `retryAfter`. 202 rather
+  than 503: the server is healthy and the resource exists, its processing just isn't complete.
+  The `/provenance` SPARQL view is a plain TDB2 service and shows pending certificates already,
+  signed but without the timestamp.
+- **Synchronous mode.** `jip:timestampMode sync` keeps the original behaviour: the query waits
+  for the token before the certificate is stored.
+- **Policy.** `jip:timestampPolicy`:
+  - `optional` (default). Sync: if no TSA answers, the certificate is issued without a timestamp
+    and a warning is logged. Async: retries continue until `jip:timestampMaxWait` (default
+    10 min) has passed since the certificate was stored; then it is released without one.
+  - `required`. Sync: the certification fails (HTTP 500, or the incoming row with
+    `SERVICE SILENT`). Async: the certificate stays pending and retries never stop, so the
+    endpoint keeps answering 202 until a TSA answers.
 - **Configuration.** Server `ja:context`, with environment overrides `PROVENANCE_TSA_URLS`,
-  `PROVENANCE_TSA_POLICY` and `PROVENANCE_TSA_TIMEOUT`. A set but empty `PROVENANCE_TSA_URLS`
+  `PROVENANCE_TSA_MODE`, `PROVENANCE_TSA_POLICY`, `PROVENANCE_TSA_TIMEOUT` and
+  `PROVENANCE_TSA_MAX_WAIT`. A set but empty `PROVENANCE_TSA_URLS`
   turns timestamps off even if the config file names TSAs. Not configured means no timestamps,
   and certificates are exactly as before.
 - **Verification.** For each token: the imprint must equal SHA-256 of the proof's signature; the
@@ -287,8 +312,9 @@ counter persisted.
 - The times inside a certificate come from the server clock. An RFC 3161 timestamp, when
   configured, proves when the certificate was signed, but not those values. TSA certificates
   are not checked for revocation.
-- A timestamped certificate costs one outgoing HTTP request while the query runs, and public
-  TSAs rate-limit.
+- A timestamped certificate costs one outgoing HTTP request, and public TSAs rate-limit. In
+  async mode the requests run on one background thread, so a burst of certificates queues up
+  and their 202 phase gets longer; in sync mode the request runs while the query waits.
 - If one request touches several versioned datasets, the headers report the last
   one that was observed.
 

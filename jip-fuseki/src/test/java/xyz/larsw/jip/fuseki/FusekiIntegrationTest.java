@@ -22,6 +22,7 @@ import org.apache.jena.fuseki.main.sys.FusekiModules;
 import org.apache.jena.graph.Graph;
 import org.apache.jena.graph.GraphMemFactory;
 import org.apache.jena.graph.Node;
+import org.apache.jena.query.ARQ;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ModelFactory;
 import org.apache.jena.riot.Lang;
@@ -32,7 +33,10 @@ import org.apache.jena.sparql.core.Var;
 import org.apache.jena.sparql.engine.binding.Binding;
 import org.apache.jena.sparql.exec.RowSet;
 import org.apache.jena.tdb2.sys.TDBInternal;
+import xyz.larsw.jip.JIP;
 import xyz.larsw.jip.cert.CertificateVerifier;
+import xyz.larsw.jip.cert.GatedTsa;
+import xyz.larsw.jip.cert.TimestampAuthorities;
 import xyz.larsw.jip.cert.ProvenanceKeys;
 import xyz.larsw.jip.version.DataVersion;
 import org.junit.jupiter.api.AfterEach;
@@ -179,5 +183,43 @@ class FusekiIntegrationTest {
                 + URLEncoder.encode("SELECT * { SERVICE <urn:x-provenance:certify> { ?s ?p ?o } }", StandardCharsets.UTF_8))));
         assertNotEquals(200, refused.statusCode());
         assertTrue(refused.headers().firstValue("X-Dataset-Version").isEmpty(), "no header for unversioned datasets");
+    }
+
+    @Test
+    void pendingTimestampAnswers202UntilItLands() throws Exception {
+        try ( GatedTsa gated = new GatedTsa() ) {
+            ARQ.getContext().set(JIP.symTimestampAuthorities,
+                                 GatedTsa.async(List.of(gated.url()), TimestampAuthorities.Policy.REQUIRED,
+                                                TimestampAuthorities.DEFAULT_MAX_WAIT));
+            send(HttpRequest.newBuilder(URI.create(base + "/ds/data?default"))
+                    .header("Content-Type", "text/turtle")
+                    .POST(HttpRequest.BodyPublishers.ofString("<http://example.org/a> <http://example.org/name> \"A\" .")));
+            HttpResponse<String> res = query(CERTIFIED_QUERY);
+            assertEquals(200, res.statusCode(), "the query does not wait for the TSA");
+            String uuid = JSON.parse(res.body()).get("results").getAsObject().get("bindings").getAsArray().get(0)
+                    .getAsObject().get("cert").getAsObject().get("value").getAsString().value().substring("urn:uuid:".length());
+            URI certUri = URI.create(base + "/$/provenance/certificate/" + uuid);
+
+            HttpResponse<String> pending = send(HttpRequest.newBuilder(certUri).header("Accept", "text/turtle"));
+            assertEquals(202, pending.statusCode(), pending.body());
+            long retryAfter = Long.parseLong(pending.headers().firstValue("Retry-After").orElseThrow());
+            assertTrue(retryAfter >= 1, "Retry-After in seconds");
+            JsonObject status = JSON.parse(pending.body());
+            assertEquals("timestamp-pending", status.get("status").getAsString().value());
+            assertEquals("urn:uuid:" + uuid, status.get("certificate").getAsString().value());
+
+            gated.open();
+            HttpResponse<String> done = null;
+            for ( int i = 0 ; i < 150 ; i++ ) {
+                done = send(HttpRequest.newBuilder(certUri).header("Accept", "text/turtle"));
+                if ( done.statusCode() != 202 )
+                    break;
+                Thread.sleep(100);
+            }
+            assertEquals(200, done.statusCode(), done.body());
+            assertTrue(done.body().contains("RFC3161Timestamp"), "the certificate now carries its timestamp");
+        } finally {
+            ARQ.getContext().remove(JIP.symTimestampAuthorities);
+        }
     }
 }

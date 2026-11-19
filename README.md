@@ -125,15 +125,27 @@ and does not depend on the server clock. The token is stored in the certificate 
 | Context setting (`ja:context`) | Environment (overrides) | Value |
 |---|---|---|
 | `jip:timestampAuthorities` | `PROVENANCE_TSA_URLS` | TSA URLs in priority order, separated by spaces or commas. Unset or empty: no timestamps. |
-| `jip:timestampPolicy` | `PROVENANCE_TSA_POLICY` | `optional` (default): issue the certificate without a timestamp if no TSA answers. `required`: fail the query. |
+| `jip:timestampMode` | `PROVENANCE_TSA_MODE` | `async` (default): the query doesn't wait; the timestamp is added in the background. `sync`: the query waits for it. |
+| `jip:timestampPolicy` | `PROVENANCE_TSA_POLICY` | `optional` (default): if no TSA answers, keep the certificate without a timestamp (async: after the maximum wait). `required`: keep retrying (async) or fail the query (sync). |
 | `jip:timestampTimeout` | `PROVENANCE_TSA_TIMEOUT` | Milliseconds allowed per TSA (default 5000). |
+| `jip:timestampMaxWait` | `PROVENANCE_TSA_MAX_WAIT` | Async, optional policy: how long to keep retrying, in milliseconds (default 600000). |
 
 The TSAs are tried in order and the first valid token is used. A TSA that fails is tried last
 for the next 60 seconds, so one that is down doesn't slow down every certificate.
 
+In async mode the certificate is signed and stored when the query runs, and a background worker
+fetches the token (retrying after 5 s, 15 s, 30 s, 1, 2, 5, then every 10 minutes). Until the
+token has landed, `GET /$/provenance/certificate/{uuid}` answers **`202 Accepted`** with a
+`Retry-After` header (seconds until the next attempt) and a JSON body such as
+`{"certificate": "urn:uuid:…", "status": "timestamp-pending", "pendingSince": "…", "retryAfter": 3}`;
+then it answers 200 with the timestamped certificate. Pending certificates are recorded in the
+certificate store, so a restart resumes them. The read-only `/provenance` SPARQL endpoint shows
+a pending certificate already, without its timestamp; the graph
+`<https://larsw.xyz/jip/pendingTimestamps>` lists the ones still waiting.
+
 | Endpoint | Returns |
 |---|---|
-| `GET /$/provenance/certificate/{uuid}` | The certificate as Turtle, JSON-LD, N-Triples, N-Quads, or RDF/XML |
+| `GET /$/provenance/certificate/{uuid}` | The certificate as Turtle, JSON-LD, N-Triples, N-Quads, or RDF/XML; `202 Accepted` + `Retry-After` while its timestamp is pending |
 | `GET /$/provenance/key` | The public key as a `did:key`, multibase, JWK, and PEM |
 | `GET /$/provenance/version/{dataset}` | The persistent and internal data versions |
 
@@ -162,8 +174,9 @@ To use the module with your own Fuseki 6.2.0, put `jena-intrinsic-provenance.jar
 - Without a TSA, timestamps come from the server clock. With one, the TSA vouches for the time
   the certificate was signed, but the times inside the certificate (`prov:startedAtTime` etc.)
   are still the server's. TSA certificates are not checked for revocation.
-- Every certificate that is timestamped costs one outgoing HTTP request, made while the query
-  runs. Public TSAs rate-limit, so use your own or a contracted TSA for real loads.
+- Every certificate that is timestamped costs one outgoing HTTP request. In async mode the
+  requests run one at a time in the background, so a burst of certificates queues up and stays
+  at 202 longer. Public TSAs rate-limit, so use your own or a contracted TSA for real loads.
 - The proof is stored as RDF triples, so JSON-LD Verifiable Credential tools may not accept it.
 - A refused certification (no version, too many rows, inside a write transaction) is reported
   as HTTP 500.

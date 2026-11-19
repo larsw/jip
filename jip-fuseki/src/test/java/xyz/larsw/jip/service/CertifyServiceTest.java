@@ -31,6 +31,7 @@ import org.apache.jena.tdb2.sys.TDBInternal;
 import xyz.larsw.jip.JIP;
 import xyz.larsw.jip.cert.CertificateStore;
 import xyz.larsw.jip.cert.CertificateVerifier;
+import xyz.larsw.jip.cert.GatedTsa;
 import xyz.larsw.jip.cert.ProvenanceKeys;
 import xyz.larsw.jip.cert.Rfc3161;
 import xyz.larsw.jip.cert.SigningKey;
@@ -246,7 +247,7 @@ class CertifyServiceTest {
     void certificateIsTimestampedWhenAuthoritiesAreConfigured() throws Exception {
         try ( TestTsa tsa = new TestTsa() ) {
             URI url = tsa.start();
-            TimestampAuthorities authorities = TimestampAuthorities.of(List.of(url), TimestampAuthorities.Policy.REQUIRED, Duration.ofSeconds(5));
+            TimestampAuthorities authorities = TimestampAuthorities.of(List.of(url), TimestampAuthorities.Policy.REQUIRED, TimestampAuthorities.Mode.SYNC, Duration.ofSeconds(5), TimestampAuthorities.DEFAULT_MAX_WAIT);
             Result r = query(dsg, ORDERED_QUERY, JIP.symTimestampAuthorities, authorities);
             Node cert = certs(r, "cert").iterator().next();
             Graph g = store.get(cert).orElseThrow();
@@ -275,11 +276,11 @@ class CertifyServiceTest {
         try ( ServerSocket s = new ServerSocket(0) ) {
             dead = URI.create("http://127.0.0.1:" + s.getLocalPort() + "/tsa");
         }
-        TimestampAuthorities required = TimestampAuthorities.of(List.of(dead), TimestampAuthorities.Policy.REQUIRED, Duration.ofSeconds(2));
+        TimestampAuthorities required = TimestampAuthorities.of(List.of(dead), TimestampAuthorities.Policy.REQUIRED, TimestampAuthorities.Mode.SYNC, Duration.ofSeconds(2), TimestampAuthorities.DEFAULT_MAX_WAIT);
         QueryExecException ex = assertThrows(QueryExecException.class, () -> query(dsg, ORDERED_QUERY, JIP.symTimestampAuthorities, required));
         assertTrue(ex.getMessage().contains("timestamp is required"), ex.getMessage());
 
-        TimestampAuthorities optional = TimestampAuthorities.of(List.of(dead), TimestampAuthorities.Policy.OPTIONAL, Duration.ofSeconds(2));
+        TimestampAuthorities optional = TimestampAuthorities.of(List.of(dead), TimestampAuthorities.Policy.OPTIONAL, TimestampAuthorities.Mode.SYNC, Duration.ofSeconds(2), TimestampAuthorities.DEFAULT_MAX_WAIT);
         Result r = query(dsg, ORDERED_QUERY, JIP.symTimestampAuthorities, optional);
         Node cert = certs(r, "cert").iterator().next();
         CertificateVerifier.Report report = verify(r, cert);
@@ -288,6 +289,117 @@ class CertifyServiceTest {
         CertificateVerifier.Report requiring = CertificateVerifier.verify(store.get(cert).orElseThrow(), r.vars(), r.rows(),
                 new CertificateVerifier.Options(Optional.of(key.didKey()), Optional.empty(), true));
         assertFalse(requiring.valid(), "verifier asked to require a timestamp");
+    }
+
+    /** Wait (up to 15 s) until the certificate is no longer pending. */
+    void awaitLanded(Node cert) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        while ( store.pendingSince(cert).isPresent() ) {
+            if ( System.nanoTime() > deadline )
+                fail("timestamp of " + cert + " did not land");
+            Thread.sleep(50);
+        }
+    }
+
+    @Test
+    void asyncTimestampDoesNotBlockTheQuery() throws Exception {
+        try ( GatedTsa gated = new GatedTsa() ) {
+            TimestampAuthorities authorities = GatedTsa.async(List.of(gated.url()), TimestampAuthorities.Policy.REQUIRED,
+                                                              TimestampAuthorities.DEFAULT_MAX_WAIT);
+            long t0 = System.nanoTime();
+            Result r = query(dsg, ORDERED_QUERY, JIP.symTimestampAuthorities, authorities);
+            assertTrue(Duration.ofNanos(System.nanoTime() - t0).toSeconds() < 10, "query did not wait for the TSA (it holds replies 30 s)");
+            Node cert = certs(r, "cert").iterator().next();
+
+            // Stored, signed and valid, but pending: no timestamp yet.
+            assertTrue(store.pendingSince(cert).isPresent());
+            assertEquals(List.of(cert), store.pending());
+            assertTrue(authorities.isQueued(cert));
+            Graph before = store.get(cert).orElseThrow();
+            assertFalse(before.contains(cert, Vocab.timestamp, Node.ANY));
+            assertTrue(verify(r, cert).valid());
+
+            gated.open();
+            awaitLanded(cert);
+            assertFalse(authorities.isQueued(cert));
+            Graph after = store.get(cert).orElseThrow();
+            assertTrue(after.contains(cert, Vocab.timestamp, Node.ANY));
+            CertificateVerifier.Report report = CertificateVerifier.verify(after, r.vars(), r.rows(),
+                    new CertificateVerifier.Options(Optional.of(key.didKey()), Optional.of(gated.tsa().anchors()), true));
+            assertTrue(report.valid(), () -> report.problems().toString());
+            assertEquals(1, report.timestamps().size());
+        }
+    }
+
+    @Test
+    void asyncOptionalPolicyReleasesTheCertificateAfterMaxWait() throws Exception {
+        URI dead;
+        try ( ServerSocket s = new ServerSocket(0) ) {
+            dead = URI.create("http://127.0.0.1:" + s.getLocalPort() + "/tsa");
+        }
+        TimestampAuthorities authorities = GatedTsa.async(List.of(dead), TimestampAuthorities.Policy.OPTIONAL, Duration.ofMillis(300));
+        Result r = query(dsg, ORDERED_QUERY, JIP.symTimestampAuthorities, authorities);
+        Node cert = certs(r, "cert").iterator().next();
+        awaitLanded(cert);
+        Graph g = store.get(cert).orElseThrow();
+        assertFalse(g.contains(cert, Vocab.timestamp, Node.ANY), "released without a timestamp");
+        assertTrue(verify(r, cert).valid());
+    }
+
+    @Test
+    void asyncRequiredPolicyKeepsRetrying() throws Exception {
+        URI dead;
+        try ( ServerSocket s = new ServerSocket(0) ) {
+            dead = URI.create("http://127.0.0.1:" + s.getLocalPort() + "/tsa");
+        }
+        TimestampAuthorities authorities = GatedTsa.async(List.of(dead), TimestampAuthorities.Policy.REQUIRED, Duration.ofMillis(300));
+        Result r = query(dsg, ORDERED_QUERY, JIP.symTimestampAuthorities, authorities);
+        Node cert = certs(r, "cert").iterator().next();
+        Thread.sleep(800);
+        assertTrue(store.pendingSince(cert).isPresent(), "still pending past maxWait: the timestamp is required");
+        assertTrue(authorities.untilNextAttempt(cert).isPresent(), "another attempt is scheduled");
+    }
+
+    @Test
+    void pendingTimestampsResumeAfterRestart() throws Exception {
+        Node cert;
+        try ( GatedTsa gated = new GatedTsa() ) {
+            // "Before the restart": the TSA never answers in time.
+            TimestampAuthorities first = GatedTsa.async(List.of(gated.url()), TimestampAuthorities.Policy.REQUIRED,
+                                                        TimestampAuthorities.DEFAULT_MAX_WAIT);
+            Result r = query(dsg, ORDERED_QUERY, JIP.symTimestampAuthorities, first);
+            cert = certs(r, "cert").iterator().next();
+            assertTrue(store.pendingSince(cert).isPresent());
+
+            // "After the restart": a fresh worker picks the certificate up from the store.
+            try ( TestTsa good = new TestTsa() ) {
+                URI url = good.start();
+                TimestampAuthorities second = GatedTsa.async(List.of(url), TimestampAuthorities.Policy.REQUIRED,
+                                                             TimestampAuthorities.DEFAULT_MAX_WAIT);
+                org.apache.jena.sparql.util.Context cxt = new org.apache.jena.sparql.util.Context();
+                cxt.set(JIP.symCertificateStore, store);
+                cxt.set(JIP.symTimestampAuthorities, second);
+                assertEquals(1, TimestampAuthorities.resumePending(cxt));
+                awaitLanded(cert);
+            }
+            // The first worker's request completes later; the certificate must not get a second token.
+            gated.open();
+            Thread.sleep(500);
+        }
+        assertEquals(1, store.get(cert).orElseThrow().find(cert, Vocab.timestamp, Node.ANY).toList().size());
+    }
+
+    @Test
+    void pendingCertificatesAreReleasedWhenTimestampsAreOff() {
+        Graph g = org.apache.jena.graph.GraphMemFactory.createDefaultGraph();
+        Node cert = NodeFactory.createURI("urn:uuid:00000000-0000-4000-8000-000000000001");
+        g.add(cert, Vocab.digest, NodeFactory.createLiteralString("x"));
+        store.storePending(cert, g, java.time.Instant.now());
+        org.apache.jena.sparql.util.Context cxt = new org.apache.jena.sparql.util.Context();
+        cxt.set(JIP.symCertificateStore, store);
+        assertEquals(1, TimestampAuthorities.resumePending(cxt));
+        assertTrue(store.pendingSince(cert).isEmpty());
+        assertTrue(store.get(cert).isPresent());
     }
 
     @Test

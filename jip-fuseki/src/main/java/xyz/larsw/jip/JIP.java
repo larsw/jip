@@ -43,6 +43,17 @@ public final class JIP {
     public static final Symbol symTimestampPolicy = Symbol.create(NS + "timestampPolicy");
     /** Server context: per-TSA request timeout in milliseconds (default 5000). */
     public static final Symbol symTimestampTimeout = Symbol.create(NS + "timestampTimeout");
+    /** Server context: {@code async} (default) or {@code sync}. */
+    public static final Symbol symTimestampMode = Symbol.create(NS + "timestampMode");
+    /** Server context: async + optional policy: how long to retry, in milliseconds (default 600000). */
+    public static final Symbol symTimestampMaxWait = Symbol.create(NS + "timestampMaxWait");
+
+    // ---- Certificate store
+
+    /** Named graph in the certificate store listing the certificates waiting for a timestamp. */
+    public static final Resource PENDING_TIMESTAMPS = resource("pendingTimestamps");
+    /** In {@link #PENDING_TIMESTAMPS}: when a certificate started waiting for its timestamp. */
+    public static final Property timestampPendingSince = property("timestampPendingSince");
 
     // ---- SPARQL functions
 

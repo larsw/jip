@@ -4,9 +4,11 @@ import java.util.Set;
 
 import org.apache.jena.fuseki.main.FusekiServer;
 import org.apache.jena.fuseki.main.sys.FusekiAutoModule;
+import org.apache.jena.query.ARQ;
 import org.apache.jena.rdf.model.Model;
 import xyz.larsw.jip.cert.ProvenanceKeys;
 import xyz.larsw.jip.cert.SigningKey;
+import xyz.larsw.jip.cert.TimestampAuthorities;
 import xyz.larsw.jip.sys.InitJIP;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,5 +44,15 @@ public class ProvenanceFusekiModule implements FusekiAutoModule {
         // Load (or generate) the key at startup so problems show early and the did:key is logged.
         SigningKey key = ProvenanceKeys.get();
         LOG.info("Provenance signing key: {} ({})", key.didKey(), ProvenanceKeys.keyFile());
+    }
+
+    @Override
+    public void serverAfterStarting(FusekiServer server) {
+        // Certificates whose timestamp was still being fetched when the server stopped.
+        try {
+            TimestampAuthorities.resumePending(ARQ.getContext());
+        } catch (RuntimeException ex) {
+            LOG.warn("Could not resume pending RFC 3161 timestamps: {}", ex.getMessage());
+        }
     }
 }

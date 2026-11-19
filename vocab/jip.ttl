@@ -205,6 +205,25 @@ jip:timestampTime
     rdfs:comment "Informational: the genTime of the token, copied out of it for queries."@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
+jip:pendingTimestamps
+    a rdfs:Resource ;
+    rdfs:label "pending timestamps"@en ;
+    rdfs:comment """Name of a graph in the certificate store that lists the certificates whose RFC
+3161 timestamp is still being fetched (asynchronous timestamps), with
+jip:timestampPendingSince. A pending certificate is already stored and signed; the
+certificate endpoint answers 202 Accepted with Retry-After for it until the timestamp is added
+or, with the optional policy, until it is released without one."""@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
+jip:timestampPendingSince
+    a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "timestamp pending since"@en ;
+    rdfs:comment """In the jip:pendingTimestamps graph: when a certificate was stored and started
+waiting for its RFC 3161 timestamp. The triple is removed in the same transaction that adds the
+timestamp."""@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
 ## ---- SPARQL functions
 
 jip:tdbDataVersion
@@ -269,8 +288,10 @@ jip:timestampPolicy
     a rdfs:Resource ;
     rdfs:label "timestamp policy"@en ;
     rdfs:comment """Context symbol, set in the Fuseki server's ja:context: "optional" (default)
-issues a certificate without a timestamp when no authority answers; "required" fails the
-certification instead. The environment variable PROVENANCE_TSA_POLICY overrides it."""@en ;
+issues a certificate without a timestamp when no authority answers (synchronous mode) or after
+jip:timestampMaxWait (asynchronous mode); "required" fails the certification (synchronous) or
+keeps the certificate pending and retrying (asynchronous). The environment variable
+PROVENANCE_TSA_POLICY overrides it."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:timestampTimeout
@@ -279,6 +300,25 @@ jip:timestampTimeout
     rdfs:comment """Context symbol, set in the Fuseki server's ja:context: the time allowed for
 each authority, in milliseconds (default 5000). The environment variable PROVENANCE_TSA_TIMEOUT
 overrides it."""@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
+jip:timestampMode
+    a rdfs:Resource ;
+    rdfs:label "timestamp mode"@en ;
+    rdfs:comment """Context symbol, set in the Fuseki server's ja:context: "async" (default) stores
+each certificate at once and fetches its RFC 3161 timestamp in the background, so queries don't
+wait for a TSA; "sync" fetches the timestamp before the query returns. The environment variable
+PROVENANCE_TSA_MODE overrides it."""@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
+jip:timestampMaxWait
+    a rdfs:Resource ;
+    rdfs:label "timestamp maximum wait"@en ;
+    rdfs:comment """Context symbol, set in the Fuseki server's ja:context: with asynchronous
+timestamps and the optional policy, how long to keep retrying, in milliseconds (default
+600000), before a certificate is released without a timestamp. With the required policy the
+certificate stays pending and retries continue. The environment variable
+PROVENANCE_TSA_MAX_WAIT overrides it."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:dataVersionComponent
