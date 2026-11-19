@@ -33,6 +33,7 @@ import xyz.larsw.jip.attestation.AttestationStore;
 import xyz.larsw.jip.attestation.AttestationVerifier;
 import xyz.larsw.jip.attestation.GatedTsa;
 import xyz.larsw.jip.attestation.ProvenanceKeys;
+import xyz.larsw.jip.attestation.Requester;
 import xyz.larsw.jip.attestation.Rfc3161;
 import xyz.larsw.jip.attestation.SigningKey;
 import xyz.larsw.jip.attestation.TestTsa;
@@ -400,6 +401,46 @@ class AttestServiceTest {
         assertEquals(1, TimestampAuthorities.resumePending(cxt));
         assertTrue(store.pendingSince(attestationIri).isEmpty());
         assertTrue(store.get(attestationIri).isPresent());
+    }
+
+    @Test
+    void requesterIsRecordedAndSigned() {
+        Result r = query(dsg, ORDERED_QUERY, JIP.symRequestUser, new Requester("alice", "BASIC"));
+        Node attestationIri = attestations(r, "attestation").iterator().next();
+        Graph g = store.get(attestationIri).orElseThrow();
+        assertTrue(g.contains(Node.ANY, Vocab.principal, NodeFactory.createLiteralString("alice")));
+        assertTrue(g.contains(Node.ANY, Vocab.provHadRole, Vocab.requester));
+        AttestationVerifier.Report report = verify(r, attestationIri);
+        assertTrue(report.valid(), () -> report.problems().toString());
+        assertEquals(Optional.of(new Requester("alice", "BASIC")), report.requester());
+
+        // The requester is signed: changing it breaks the signature.
+        g.remove(Node.ANY, Vocab.principal, Node.ANY);
+        g.add(NodeFactory.createURI(attestationIri.getURI() + "#requester"), Vocab.principal, NodeFactory.createLiteralString("mallory"));
+        assertFalse(AttestationVerifier.verify(g, r.vars(), r.rows(), Optional.of(key.didKey())).signatureValid());
+    }
+
+    @Test
+    void requesterComesFromTheRequestThread() {
+        RequestUser.set(new Requester("bob", null));
+        try {
+            Result r = query(dsg, ORDERED_QUERY);
+            AttestationVerifier.Report report = verify(r, attestations(r, "attestation").iterator().next());
+            assertEquals(Optional.of(new Requester("bob", null)), report.requester());
+        } finally {
+            RequestUser.clear();
+        }
+    }
+
+    @Test
+    void anonymousOrUnrecordedRequestsHaveNoRequester() {
+        Result anonymous = query(dsg, ORDERED_QUERY);
+        assertTrue(verify(anonymous, attestations(anonymous, "attestation").iterator().next()).requester().isEmpty());
+
+        Result off = query(dsg, ORDERED_QUERY, JIP.symRequestUser, new Requester("alice", "BASIC"), JIP.symRecordRequester, "false");
+        Node attestationIri = attestations(off, "attestation").iterator().next();
+        assertTrue(verify(off, attestationIri).requester().isEmpty());
+        assertFalse(store.get(attestationIri).orElseThrow().contains(Node.ANY, Vocab.principal, Node.ANY));
     }
 
     @Test

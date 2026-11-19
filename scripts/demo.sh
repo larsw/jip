@@ -33,6 +33,12 @@ IMAGE=jena-intrinsic-provenance:0.14.0
 OUT="$PWD/demo-out"
 mkdir -p "$OUT"
 
+# Demo accounts from docker/shiro.ini. Data, the attestation store and attestations need a login;
+# each attestation names the user who asked for it.
+ALICE="alice:alice-demo-pw"
+BOB="bob:bob-demo-pw"
+AS=$ALICE   # the current user: curl -u "$AS"
+
 bold() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 info() { printf '   %s\n' "$*"; }
 header() { grep -i "^$1:" "$2" | tr -d '\r' | awk '{print $2}'; }
@@ -47,12 +53,12 @@ wait_ready() {
 
 # query <sparql> <results-file> <headers-file>
 query() {
-  curl -fsS -D "$3" -o "$2" -H 'Accept: application/sparql-results+json' \
+  curl -fsS -u "$AS" -D "$3" -o "$2" -H 'Accept: application/sparql-results+json' \
        --data-urlencode "query=$1" "$BASE/ds/sparql"
 }
 
 update() {
-  curl -fsS -D "$OUT/update.headers" -o /dev/null -H 'Content-Type: application/sparql-update' \
+  curl -fsS -u "$AS" -D "$OUT/update.headers" -o /dev/null -H 'Content-Type: application/sparql-update' \
        --data-binary "$1" "$BASE/ds/update"
   header X-Dataset-Version "$OUT/update.headers"
 }
@@ -64,12 +70,12 @@ verify() {
   return "${PIPESTATUS[0]}"
 }
 
-# attestation <cert-iri> <file>: fetch it; while its RFC 3161 timestamp is still being fetched
+# fetch_attestation <attestation-iri> <file>: fetch it (as $AS); while its RFC 3161 timestamp is still being fetched
 # the server answers 202 Accepted with Retry-After, so wait and ask again.
 fetch_attestation() {
   local url="$BASE/\$/provenance/attestation/${1#urn:uuid:}" code
   for _ in $(seq 1 60); do
-    code=$(curl -sS -H 'Accept: text/turtle' -D "$OUT/attestation.headers" -o "$OUT/$2" -w '%{http_code}' "$url")
+    code=$(curl -sS -u "$AS" -H 'Accept: text/turtle' -D "$OUT/attestation.headers" -o "$OUT/$2" -w '%{http_code}' "$url")
     case "$code" in
       200) return 0 ;;
       202) sleep "$(header Retry-After "$OUT/attestation.headers")" ;;
@@ -119,7 +125,7 @@ else
 fi
 
 bold "1. Load data (Graph Store Protocol): a committed write bumps the version"
-curl -fsS -D "$OUT/load.headers" -o /dev/null -H 'Content-Type: text/turtle' --data-binary @- "$BASE/ds/data?default" <<'EOF'
+curl -fsS -u "$AS" -D "$OUT/load.headers" -o /dev/null -H 'Content-Type: text/turtle' --data-binary @- "$BASE/ds/data?default" <<'EOF'
 PREFIX ex: <http://example.org/>
 ex:alice ex:name "Alice" ; ex:email "alice@example.org" .
 ex:bob   ex:name "Bob"   ; ex:email "bob@example.org" .
@@ -129,7 +135,10 @@ V1=$(header X-Dataset-Version "$OUT/load.headers")
 info "X-Dataset-Version: $V1   X-Dataset-Id: $(header X-Dataset-Id "$OUT/load.headers")"
 
 bold "2. Attested query"
-info "SERVICE <urn:x-provenance:attest> { SELECT ... ORDER BY ?name }"
+code=$(curl -s -o /dev/null -w '%{http_code}' --data-urlencode "query=$ATTESTED_QUERY" "$BASE/ds/sparql")
+info "without logging in: HTTP $code"
+[[ "$code" == 401 ]] || { echo "!! an anonymous query was not refused" >&2; exit 1; }
+info "as alice: SERVICE <urn:x-provenance:attest> { SELECT ... ORDER BY ?name }"
 query "$ATTESTED_QUERY" "$OUT/results.srj" "$OUT/query.headers"
 jq -r '.results.bindings[] | "   \(.name.value)\t\(.email.value // "-")\t\(.attestation.value)"' "$OUT/results.srj"
 info "X-Dataset-Version: $(header X-Dataset-Version "$OUT/query.headers")"
@@ -139,7 +148,7 @@ bold "3. The attestation ($ATTESTATION)"
 if [[ -n "$TSA_URLS" ]]; then
   # Timestamps are fetched in the background; right after the query the attestation is
   # usually still waiting for its token.
-  code=$(curl -sS -D "$OUT/pending.headers" -o "$OUT/pending.json" -w '%{http_code}' \
+  code=$(curl -sS -u "$AS" -D "$OUT/pending.headers" -o "$OUT/pending.json" -w '%{http_code}' \
               "$BASE/\$/provenance/attestation/${ATTESTATION#urn:uuid:}")
   if [[ "$code" == 202 ]]; then
     info "right after the query: HTTP 202, Retry-After: $(header Retry-After "$OUT/pending.headers")"
@@ -165,13 +174,15 @@ else
   info "-> tampering detected (exit 1), as expected"
 fi
 
-bold "6. Update: version advances; a new attestation points at the new state"
+bold "6. Update as bob: version advances; a new attestation, requested by bob, points at the new state"
+AS=$BOB
 V2=$(update "$PREFIXES INSERT DATA { ex:dave ex:name \"Dave\" }")
 info "update response X-Dataset-Version: $V2"
 query "$ATTESTED_QUERY" "$OUT/results-2.srj" "$OUT/query-2.headers"
 ATTESTATION2=$(jq -r '.results.bindings[0].attestation.value' "$OUT/results-2.srj")
 fetch_attestation "$ATTESTATION2" attestation-2.ttl
 verify results-2.srj attestation-2.ttl
+AS=$ALICE
 
 bold "7. Empty result: an attestation-only row proves absence"
 query "$PREFIXES SELECT ?p ?attestation WHERE { SERVICE <urn:x-provenance:attest> { ?p ex:name \"Mallory\" } }" \
@@ -196,20 +207,21 @@ curl -fsS "$BASE/\$/provenance/version/ds" | jq -c '{version, tdbInternal}' | se
 [[ "$V3" -eq $((V2 + 1)) ]] || { echo "!! version did not continue after restart ($V2 -> $V3)" >&2; exit 1; }
 
 bold "10. Attestations are queryable (PROV-O) at /provenance"
-curl -fsS -H 'Accept: application/sparql-results+json' --data-urlencode query@- "$BASE/provenance/sparql" <<'EOF' |
+curl -fsS -u "$AS" -H 'Accept: application/sparql-results+json' --data-urlencode query@- "$BASE/provenance/sparql" <<'EOF' |
 PREFIX prov: <http://www.w3.org/ns/prov#>
 PREFIX jip:  <https://larsw.xyz/jip/>
-SELECT ?attestation ?version ?solutions ?ended ?tsa WHERE {
+SELECT ?attestation ?version ?solutions ?ended ?tsa ?requester WHERE {
   GRAPH ?attestation {
     ?attestation jip:attests ?r .
     ?r prov:wasDerivedFrom ?state ; jip:solutionCount ?solutions ; prov:wasGeneratedBy ?exec .
     ?state jip:dataVersion ?version .
     ?exec prov:endedAtTime ?ended .
     OPTIONAL { ?attestation jip:timestamp/jip:timestampAuthority ?tsa }
+    OPTIONAL { ?exec prov:qualifiedAssociation [ prov:hadRole jip:requester ; prov:agent/jip:principal ?requester ] }
   }
 } ORDER BY ?ended
 EOF
-  jq -r '.results.bindings[] | "   v\(.version.value)\t\(.solutions.value) solution(s)\t\(.attestation.value)\t\(.tsa.value // "no timestamp")"'
+  jq -r '.results.bindings[] | "   v\(.version.value)\t\(.solutions.value) solution(s)\t\(.requester.value // "anonymous")\t\(.attestation.value)\t\(.tsa.value // "no timestamp")"'
 
 if [[ -n "$TSA_URLS" ]]; then
   bold "11. Timestamp fallback: put an unreachable TSA first in the list"

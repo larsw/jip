@@ -9,6 +9,7 @@ import java.util.Set;
 import org.apache.jena.sys.JenaSystem;
 import xyz.larsw.jip.attestation.AttestationTimestamps;
 import xyz.larsw.jip.attestation.AttestationVerifier;
+import xyz.larsw.jip.attestation.Requester;
 import xyz.larsw.jip.attestation.Rfc3161;
 
 /**
@@ -97,6 +98,7 @@ public final class Verify {
             System.out.println("  TSA           : " + (t.tsaName() == null ? "?" : t.tsaName())
                                + (c.authority() == null ? "" : "  via " + c.authority()));
         }
+        System.out.println("Requested by    : " + r.requester().map(Requester::toString).orElse("(not recorded)"));
         System.out.println("Dataset state   : " + (r.datasetState() == null ? "?" : r.datasetState().getURI()) + "  (version "
                            + r.dataVersion() + ")");
         System.out.println("Solutions       : " + r.solutionCount() + " attested, " + r.rowsChecked() + " row(s) carry this attestation");

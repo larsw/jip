@@ -30,7 +30,17 @@ public final class AttestationBuilder {
                         String servicePattern,
                         String queryText,           // nullable
                         Instant started,
-                        Instant ended) {}
+                        Instant ended,
+                        Requester requester) {      // nullable: the authenticated user, if recorded
+
+        /** Without a requester (anonymous request, or not recorded). */
+        public Input(UUID attestationId, UUID databaseId, String datasetIRI, long dataVersion, List<String> variables,
+                     boolean ordered, int solutionCount, String digest, String servicePattern, String queryText,
+                     Instant started, Instant ended) {
+            this(attestationId, databaseId, datasetIRI, dataVersion, variables, ordered, solutionCount, digest, servicePattern,
+                 queryText, started, ended, null);
+        }
+    }
 
     public static Node attestationNode(UUID attestationId) {
         return NodeFactory.createURI("urn:uuid:" + attestationId);
@@ -87,6 +97,8 @@ public final class AttestationBuilder {
         g.add(exec, Vocab.servicePattern, NodeFactory.createLiteralString(in.servicePattern()));
         if ( in.queryText() != null )
             g.add(exec, Vocab.queryText, NodeFactory.createLiteralString(in.queryText()));
+        if ( in.requester() != null )
+            in.requester().addTo(g, exec);
 
         g.add(state, type, Vocab.provEntity);
         g.add(state, type, Vocab.DatasetState);

@@ -65,6 +65,7 @@ public final class AttestationVerifier {
                          Node datasetState,
                          int solutionCount,
                          int rowsChecked,
+                         Optional<Requester> requester,
                          List<AttestationTimestamps.Check> timestamps,
                          List<String> problems) {
         public boolean valid() {
@@ -141,7 +142,7 @@ public final class AttestationVerifier {
         List<String> problems = new ArrayList<>();
         List<Node> attestationNodes = attestation.find(Node.ANY, RDF.type.asNode(), Vocab.ResultAttestation).mapWith(Triple::getSubject).toList();
         if ( attestationNodes.size() != 1 )
-            return new Report(null, false, false, null, -1, null, -1, 0, List.of(),
+            return new Report(null, false, false, null, -1, null, -1, 0, Optional.empty(), List.of(),
                               List.of("Expected one jip:ResultAttestation, found " + attestationNodes.size()));
         Node attestationIri = attestationNodes.get(0);
         Optional<String> expectedKey = options.expectedKey();
@@ -164,7 +165,7 @@ public final class AttestationVerifier {
         // 2. Claims
         Node result = object(attestation, attestationIri, Vocab.attests);
         if ( result == null )
-            return new Report(attestationIri, sig.valid(), false, sig.verificationMethod(), -1, null, -1, 0, timestamps,
+            return new Report(attestationIri, sig.valid(), false, sig.verificationMethod(), -1, null, -1, 0, Optional.empty(), timestamps,
                               add(problems, "No jip:attests"));
         TreeSet<String> vars = new TreeSet<>();
         attestation.find(result, Vocab.variable, Node.ANY).forEach(t -> vars.add(t.getObject().getLiteralLexicalForm()));
@@ -172,6 +173,8 @@ public final class AttestationVerifier {
         int count = Integer.parseInt(lexical(attestation, result, Vocab.solutionCount));
         String digest = lexical(attestation, result, Vocab.digest);
         Node state = object(attestation, result, Vocab.provWasDerivedFrom);
+        Node exec = object(attestation, result, Vocab.provWasGeneratedBy);
+        Optional<Requester> requester = exec == null ? Optional.empty() : Requester.from(attestation, exec);
         String versionLex = state == null ? null : lexical(attestation, state, Vocab.dataVersion);
         long version = versionLex == null ? -1 : Long.parseLong(versionLex);
 
@@ -198,7 +201,7 @@ public final class AttestationVerifier {
         if ( !digestOk )
             problems.add("Result digest mismatch: attestation " + digest + ", rows " + actual);
 
-        return new Report(attestationIri, sig.valid(), digestOk, sig.verificationMethod(), version, state, count, mine.size(), timestamps,
+        return new Report(attestationIri, sig.valid(), digestOk, sig.verificationMethod(), version, state, count, mine.size(), requester, timestamps,
                           List.copyOf(problems));
     }
 

@@ -162,6 +162,36 @@ reads, or the last committed version outside a transaction. It is an error on a 
 not a jip:VersionedDatasetTDB2."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
+## ---- The requester
+
+jip:requester
+    a prov:Role , owl:NamedIndividual ;
+    rdfs:label "requester"@en ;
+    rdfs:comment """The role of the authenticated user who asked for an attestation, in a
+prov:qualifiedAssociation of the jip:QueryExecution. The user is a prov:Agent with jip:principal
+and, if known, jip:authenticationScheme. The statement is part of the signed attestation: the
+signing server vouches that it authenticated this principal. Anonymous requests have no
+requester."""@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
+jip:principal
+    a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain prov:Agent ;
+    rdfs:range xsd:string ;
+    rdfs:label "principal"@en ;
+    rdfs:comment """The name under which the server authenticated the requester (the HTTP remote
+user, for example a user name or the subject of a bearer token)."""@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
+jip:authenticationScheme
+    a owl:DatatypeProperty , owl:FunctionalProperty ;
+    rdfs:domain prov:Agent ;
+    rdfs:range xsd:string ;
+    rdfs:label "authentication scheme"@en ;
+    rdfs:comment """How the server authenticated the requester, as reported by the servlet
+container: for example "BASIC", "DIGEST" or "BEARER". Absent if unknown."""@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
 ## ---- RFC 3161 timestamps
 
 jip:RFC3161Timestamp
@@ -322,6 +352,21 @@ timestamps and the optional policy, how long to keep retrying, in milliseconds (
 600000), before an attestation is released without a timestamp. With the required policy the
 attestation stays pending and retries continue. The environment variable
 PROVENANCE_TSA_MAX_WAIT overrides it."""@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
+jip:recordRequester
+    a rdfs:Resource ;
+    rdfs:label "record requester"@en ;
+    rdfs:comment """Context symbol, set in the Fuseki server's ja:context: whether attestations
+record the authenticated user (jip:requester); "true" (default) or "false". The environment
+variable PROVENANCE_RECORD_REQUESTER overrides it."""@en ;
+    rdfs:isDefinedBy <https://larsw.xyz/jip/> .
+
+jip:requestUser
+    a rdfs:Resource ;
+    rdfs:label "request user"@en ;
+    rdfs:comment """Context symbol for embedded use: the requester of a query execution, set by the
+application instead of taken from the HTTP request."""@en ;
     rdfs:isDefinedBy <https://larsw.xyz/jip/> .
 
 jip:dataVersionComponent

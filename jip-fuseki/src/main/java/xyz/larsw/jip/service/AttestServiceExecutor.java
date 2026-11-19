@@ -136,7 +136,7 @@ public class AttestServiceExecutor implements ChainingServiceExecutor {
         AttestationBuilder.Input input = new AttestationBuilder.Input(
                 attestationId, dataVersion.databaseId(), dataVersion.datasetIRI().orElse(null), eval.version(),
                 variables, ordered, eval.rows().size(), digest,
-                patternText(inner), queryText(context), started, ended);
+                patternText(inner), queryText(context), started, ended, RequestUser.forAttestation(context).orElse(null));
         Graph attestation = AttestationBuilder.buildSigned(input, key, agentLabel());
         storeWithTimestamp(attestation, attestationIri, context);
         LOG.info("Attested {} solution(s) at database {} v{} -> {}", eval.rows().size(), dataVersion.databaseId(),

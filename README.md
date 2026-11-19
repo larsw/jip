@@ -35,6 +35,11 @@ the version continues from where it stopped. Attestations are timestamped by pub
 `JIP_TSA_URLS`, or turn timestamps off with `--no-tsa`. The last step puts an unreachable TSA
 first in the list to show the fallback.
 
+The demo server requires a login (HTTP Basic, see [`docker/shiro.ini`](docker/shiro.ini)) for the
+data, the attestation store and attestations; the demo users are `alice` / `alice-demo-pw` and
+`bob` / `bob-demo-pw`. The signing key and the data versions stay public. An anonymous query is
+refused, and each attestation names the user who asked for it.
+
 ## Using it
 
 An attested query:
@@ -52,7 +57,7 @@ Every row has `?attestation` bound to the same `<urn:uuid:…>`. Project `?attes
 `SELECT *` leaves it out. Fetch the attestation and check it offline:
 
 ```bash
-curl -H 'Accept: text/turtle' "http://localhost:3030/\$/provenance/attestation/<uuid>" > attestation.ttl
+curl -u alice:alice-demo-pw -H 'Accept: text/turtle' "http://localhost:3030/\$/provenance/attestation/<uuid>" > attestation.ttl
 
 docker run --rm -v "$PWD:/data:ro" jena-intrinsic-provenance:0.14.0 \
   verify --results /data/results.srj --attestation /data/attestation.ttl --expect-key did:key:zDn…
@@ -100,6 +105,26 @@ The data version is available in four places:
 - `GET /$/provenance/version/{dataset}` returns both as JSON.
 - Responses that read or wrote a versioned dataset carry the `X-Dataset-Version` and
   `X-Dataset-Id` headers.
+
+### The requester
+
+If the request was authenticated, the attestation names the user. The query execution gets a
+second PROV agent, besides the server's key, in the role `jip:requester`:
+
+```turtle
+<urn:uuid:A#exec> prov:wasAssociatedWith <did:key:zDn…> , <urn:uuid:A#requester> ;
+    prov:qualifiedAssociation [ a prov:Association ;
+        prov:agent <urn:uuid:A#requester> ; prov:hadRole jip:requester ] .
+<urn:uuid:A#requester> a prov:Agent ; jip:principal "alice" ; jip:authenticationScheme "BASIC" .
+```
+
+The user is the servlet request's authenticated user (`getRemoteUser()`), whatever did the
+authentication: Shiro, Fuseki's password file, or a bearer-token filter. The scheme comes from
+the container or the `Authorization` header. The statement is signed with the rest of the
+attestation, so the server vouches that it authenticated this principal; the verifier reports it
+("Requested by"). Anonymous requests have no requester. `PROVENANCE_RECORD_REQUESTER=false` (or
+the server setting `jip:recordRequester false`) stops recording users. Embedded applications can
+supply the requester in the query context (`jip:requestUser`).
 
 ## Configuration
 
@@ -235,6 +260,10 @@ To use the module with your own Fuseki 6.2.0, put `jena-intrinsic-provenance.jar
   requests run one at a time in the background, so a burst of attestations queues up and stays
   at 202 longer. Public TSAs rate-limit, so use your own or a contracted TSA for real loads.
 - The proof is stored as RDF triples, so JSON-LD Verifiable Credential tools may not accept it.
+- Attestations name the authenticated user, and contain the query text. Whoever can read the
+  attestation store or fetch attestations sees who asked what; restrict access (the demo requires
+  a login) or set `PROVENANCE_RECORD_REQUESTER=false`. The demo's users and passwords are in
+  plain text in `docker/shiro.ini`; use a proper realm for real use.
 - With the PKCS#11 signer the PIN is in the Fuseki process: the key can't be extracted, but a
   compromised server can still have the token sign. SoftHSM2 in the Docker setup keeps its
   keys in files; use an HSM for real keys.

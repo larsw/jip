@@ -153,6 +153,32 @@ _:Si rs:binding _:B .  _:B rs:variable "v" ; rs:value <term> .   # bound vars on
 
 Only the digest of the rows is stored, never the rows themselves.
 
+### Requester (the authenticated user)
+
+- **Statement.** If the HTTP request was authenticated, the query execution gets a second agent
+  besides the server's key, in a qualified association with the role `jip:requester`:
+  ```turtle
+  <urn:uuid:C#exec> prov:wasAssociatedWith <urn:uuid:C#requester> ;
+      prov:qualifiedAssociation [ a prov:Association ; prov:agent <urn:uuid:C#requester> ;
+                                  prov:hadRole jip:requester ] .
+  <urn:uuid:C#requester> a prov:Agent ; jip:principal "alice" ; jip:authenticationScheme "BASIC" .
+  ```
+  It is part of the signed document: the server vouches that it authenticated this principal,
+  not how strongly. Anonymous requests have no requester. The verifier reports it.
+- **Capture.** Fuseki doesn't pass the HTTP user into the query's `Context`, and Fuseki 6.2 has
+  no per-request module hook, but it runs the query on the request's thread. `RequesterFilter`
+  records `getRemoteUser()` and the scheme in a thread-local (`RequestUser`) around the request.
+  The filter is added in the module's `configured` step, after every module's `prepare` step,
+  where authentication filters such as Shiro's are added, so it sees the authenticated request.
+  Jetty-level authentication (Fuseki's password file) happens before all filters anyway. The
+  scheme is the container's `getAuthType()`, or else the `Authorization` header's scheme (Shiro
+  doesn't set the auth type). Embedded use can put a `Requester` in the query context
+  (`jip:requestUser`), which wins over the thread-local.
+- **Privacy.** On by default; `jip:recordRequester false` / `PROVENANCE_RECORD_REQUESTER=false`
+  turns it off. The demo requires a login for the data, the attestation store and attestation
+  fetching (`docker/shiro.ini`, users alice and bob); the signing key and data versions stay
+  public.
+
 ### Signature: W3C Data Integrity, applied at the RDF level
 
 - **Cryptosuites:** `ecdsa-rdfc-2019` (vc-di-ecdsa) for P-256 and P-384 keys, the default
@@ -346,6 +372,9 @@ counter persisted.
   and their 202 phase gets longer; in sync mode the request runs while the query waits.
 - If one request touches several versioned datasets, the headers report the last
   one that was observed.
+- Attestations name the authenticated user and contain the query text; whoever can read them
+  sees who asked what. The requester is what the server authenticated; a compromised server can
+  name anyone.
 - The PKCS#11 PIN is in the Fuseki process. The key can't be extracted, but a compromised
   Fuseki process can still have the token sign anything. The p11-kit client/server forwarding is
   Linux-only, and SoftHSM2 stores keys in files: it stands in for an HSM.
@@ -367,8 +396,10 @@ These are the places where building the PoC refined the plan above.
 - **Error status.** A refused attestation (unversioned dataset, cap exceeded, write
   transaction) reaches the client as HTTP 500, because Fuseki maps execution-time exceptions
   to 500.
-- **Docker security.** In UI mode Fuseki writes a `shiro.ini` that limits `/$/**` to localhost.
-  The image installs one that additionally opens `/$/provenance/**` (read-only) to everyone.
+- **Docker security.** The image passes its own `shiro.ini` to Fuseki with `--shiro` (override
+  with `FUSEKI_SHIRO`): HTTP Basic with the demo users alice and bob for `/ds/**`,
+  `/provenance/**` and attestations; `/$/provenance/key`, `/$/provenance/version/**` and
+  `/$/ping` are public; the rest of `/$/` is localhost-only.
 - **Recorded pattern text.** `jip:servicePattern` is written after undoing the algebra's scope
   renaming (`?/p` → `?p`), so it reads like the query.
 - **Measured cost.** Digesting 10,000 rows takes about 1 s, well inside the 10 s

@@ -4,6 +4,7 @@ import java.util.Set;
 
 import org.apache.jena.fuseki.main.FusekiServer;
 import org.apache.jena.fuseki.main.sys.FusekiAutoModule;
+import org.apache.jena.fuseki.server.DataAccessPointRegistry;
 import org.apache.jena.query.ARQ;
 import org.apache.jena.rdf.model.Model;
 import xyz.larsw.jip.attestation.ProvenanceKeys;
@@ -37,6 +38,13 @@ public class ProvenanceFusekiModule implements FusekiAutoModule {
     public void prepare(FusekiServer.Builder builder, Set<String> datasetNames, Model configModel) {
         builder.addServlet("/$/provenance/*", new ProvenanceServlet());
         builder.addFilter("/*", new DataVersionHeaderFilter());
+    }
+
+    @Override
+    public void configured(FusekiServer.Builder builder, DataAccessPointRegistry dapRegistry, Model configModel) {
+        // After every module's prepare step, so after the authentication filters (Shiro adds its
+        // filter in prepare): the requester filter needs the authenticated user.
+        builder.addFilter("/*", new RequesterFilter());
     }
 
     @Override

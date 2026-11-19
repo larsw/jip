@@ -48,6 +48,11 @@ public final class JIP {
     /** Server context: async + optional policy: how long to retry, in milliseconds (default 600000). */
     public static final Symbol symTimestampMaxWait = Symbol.create(NS + "timestampMaxWait");
 
+    /** Server context: record the authenticated user in attestations ({@code true}, the default, or {@code false}). */
+    public static final Symbol symRecordRequester = Symbol.create(NS + "recordRequester");
+    /** Query context: the requester ({@code Requester}) for embedded use, instead of the HTTP request's user. */
+    public static final Symbol symRequestUser = Symbol.create(NS + "requestUser");
+
     // ---- Attestation store
 
     /** Named graph in the attestation store listing the attestations waiting for a timestamp. */

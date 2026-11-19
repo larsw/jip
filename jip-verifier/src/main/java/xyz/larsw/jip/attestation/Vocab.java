@@ -30,6 +30,11 @@ public final class Vocab {
     public static final Node provStartedAtTime = uri(PROV, "startedAtTime");
     public static final Node provEndedAtTime = uri(PROV, "endedAtTime");
     public static final Node provSpecializationOf = uri(PROV, "specializationOf");
+    public static final Node provAgent = uri(PROV, "Agent");
+    public static final Node provAssociation = uri(PROV, "Association");
+    public static final Node provQualifiedAssociation = uri(PROV, "qualifiedAssociation");
+    public static final Node provAgentProperty = uri(PROV, "agent");
+    public static final Node provHadRole = uri(PROV, "hadRole");
 
     // Data Integrity (https://w3id.org/security#)
     public static final Node secProof = uri(SEC, "proof");
@@ -60,6 +65,12 @@ public final class Vocab {
     public static final Node servicePattern = uri(NS, "servicePattern");
     public static final Node queryText = uri(NS, "queryText");
     public static final Node dataVersion = uri(NS, "dataVersion");
+
+    // jip: the authenticated user who asked for the attestation (see Requester)
+    /** Role (a prov:Role) of the user in the query execution's qualified association. */
+    public static final Node requester = uri(NS, "requester");
+    public static final Node principal = uri(NS, "principal");
+    public static final Node authenticationScheme = uri(NS, "authenticationScheme");
 
     // jip: RFC 3161 timestamps (outside the signed document; see AttestationTimestamps)
     public static final Node RFC3161Timestamp = uri(NS, "RFC3161Timestamp");
